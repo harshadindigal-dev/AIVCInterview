@@ -60,3 +60,34 @@ Short entries: decision, alternatives considered, why.
 ## D13. "Mark misclassified" also reroutes when the service line changes
 - **Alternatives:** Record the corrected label only.
 - **Why:** A reviewer who corrects the service line almost always wants the enquiry to go to that line's lead. Doing both in one action avoids a second click. Feedback is recorded with action `misclassified`, so it is distinguishable from a plain reassignment.
+
+## D14. Submit runs the pipeline in a background thread and the page polls for progress
+- **Alternatives:** Run it inside the POST request, which shows a spinner for about 10s with no step-by-step progress. Or a job queue, which the brief rules out.
+- **Why:** The brief asks for steps shown as they complete. The pipeline function takes an `on_step` callback, and HTMX polls `/enquiries/{id}/progress`. If the thread crashes, the enquiry is parked in review, so it is never dropped. Progress is held in memory; that is fine for one process at about 10 enquiries a day.
+
+## D15. Seeding shifts dataset dates to end yesterday, and seeds some feedback marked `source=seed`
+- **Why:** The 7- and 30-day metrics need recent data whenever the app is started, and the relative gaps between records (which dedupe relies on) are preserved. The reassignment metrics need some feedback rows. Seeded feedback is limited to:
+  - corrections where the model disagreed with gold;
+  - two plausible reassignments;
+  - twelve accepts.
+
+  Seeded rows are labelled "seeded demo" in the UI and excluded from `export_feedback.py` by default.
+
+## D16. Evaluation runs the real pipeline, with a fresh database per model
+- **Alternatives:** Call `classify()` directly.
+- **Why:** Routing accuracy, review recall and duplicate handling can only be measured end to end. A fresh SQLite file per model keeps dedupe faithful. Records are processed in parallel, except that repeats of the same email and text run in submission order, after their originals.
+
+## D17. No prompt tuning against the eval set
+- **Why:** The complexity errors suggest a rubric fix ("board-level stakeholders"). Tuning against the same 50 records would make the numbers look better and mean less. The fix and its measurement belong with a held-out, independently labelled set. This is recorded in `failure_notes.md` and the README.
+
+## D18. `config/` is mounted read-only into the container
+- **Why:** This is an acceptance criterion: changing a team lead in `routing.yaml` and restarting must change routing with no rebuild. Verified on a fresh clone.
+
+## D19. htmx is vendored (`app/static/htmx.min.js`, 1.9.12)
+- **Why:** There is no build step either way. Vendoring removes a CDN dependency from "runs first time".
+
+## D20. "Accept" in the review queue means "route to the suggested lead"
+- **Why:** A reviewer accepting a flagged enquiry is accepting the model's service line. Accept sends the enquiry to that lead with a notification. For out-of-scope enquiries, with no lead, the button reads "Close: no team lead needed".
+
+## D21. The routing destination is the primary recipient only; copies are separate
+- **Why:** Routing accuracy compares who owns the enquiry. Copies (practice head, service-line lead on an existing-client enquiry) are shown in the trace and in the notification, but don't count towards accuracy.
