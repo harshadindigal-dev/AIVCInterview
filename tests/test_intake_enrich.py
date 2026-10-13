@@ -66,3 +66,32 @@ def test_conflict_flag(domain):
     r = enrich(email="j@brightwatercap.com", company_name="Brightwater Capital Partners", company_size="51-200",
                industry="Financial services", crm=MockCRMClient(domain.crm), company_data=MockCompanyData(domain.crm))
     assert r["conflict_flag"] and not r["existing_client"]
+
+
+def test_subsidiary_of_client_is_treated_as_client(domain):
+    crm, cd = MockCRMClient(domain.crm), MockCompanyData(domain.crm)
+    r = enrich(email="ops@brannigansbakery.co.uk", company_name="Brannigan's Bakery", company_size="51-200",
+               industry="Retail & consumer", crm=crm, company_data=cd)
+    assert r["existing_client"] and r["via_group"] and r["parent_group"] == "Halden Foods Ltd"
+    assert r["relationship_partner"] == "priya_raman" and r["audit_client"]
+    assert r["hq_country"] == "United Kingdom" and r["recorded_headcount"] == 58
+
+
+def test_conflict_inherited_from_parent_and_richer_facts(domain):
+    import copy
+    from dataclasses import replace
+    crm_data = copy.deepcopy(domain.crm)
+    crm_data["companies"].append({"company_name": "Kestrel Spares Ltd", "email_domains": ["kestrelspares.co.uk"],
+                                  "existing_client": False, "conflict_flag": False,
+                                  "parent_group": "Kestrel Components Ltd"})
+    d = replace(domain, crm=crm_data)
+    r = enrich(email="a@kestrelspares.co.uk", company_name="Kestrel Spares", company_size="11-50", industry="Other",
+               crm=MockCRMClient(d.crm), company_data=MockCompanyData(d.crm))
+    assert r["conflict_flag"] and r["conflict_reason"].startswith("Via parent Kestrel Components Ltd")
+
+
+def test_existing_client_carries_history(domain):
+    r = enrich(email="x@haldenfoods.co.uk", company_name="Halden Foods", company_size="201-1000",
+               industry="Retail & consumer", crm=MockCRMClient(domain.crm), company_data=MockCompanyData(domain.crm))
+    assert r["client_since"] == 2017 and r["last_engagement"]["service_line"] == "audit"
+    assert r["open_opportunities"] and r["annual_revenue_gbp_m"] == 182

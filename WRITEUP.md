@@ -40,7 +40,8 @@ The system is tuned to send more to review rather than less. Catching the cases 
 | New kinds of work forced into an existing category | High | Medium | Reassignments into one line from many directions; rising out-of-scope share | Leads reassign; definitions can be updated with an impact preview | Let the model say "doesn't fit", and track how often it does |
 | Confusion between neighbouring lines (internal vs external audit, technology vs strategy) | Medium | Medium | Enquiries passed back and forth between the same two lines | Each definition says how it differs from its neighbours | A dedicated test set of borderline cases, rechecked on every change |
 | Enquiries needing more than one practice | Medium | Medium | Rate of multi-service flags; reassignments between the primary and secondary lines | Secondary lines shown on every enquiry | Copy the secondary line's lead automatically |
-| A conflict or existing client missed (name variations, subsidiaries, personal email addresses) | Low to medium | High | Partners reporting a missed client; CRM match rate | Matching on email domain and company name; conflicts always go to a person | Fuzzy matching, group structure lookups, and the firm's conflicts system as a gate |
+| A conflict or existing client missed (name variations, subsidiaries, personal email addresses) | Low to medium | High | Partners reporting a missed client; CRM match rate | Matching on email domain and company name; subsidiaries resolved to their group; conflicts always go to a person | Fuzzy matching, the firm's conflicts system as a gate, and external ownership lookups for prospects |
+| Too little known about a new prospect to judge size or complexity | High | Low to medium | Share of enquiries with no CRM or company record | The model works from the enquiry text; the questions-for-the-client list covers the gaps | On-demand external enrichment (Exa, Parallel or Clay), limited to company name and domain |
 | A deadline missed because the client marked the enquiry low priority | Medium | High for that client | Rate of urgency mismatches; age of items in review | The model reads urgency from the text and flags mismatches; urgent complex work copies the practice head | Extract deadlines as dates and alert when one is under five working days away |
 | Complexity overstated | High (measured) | Low | Complexity corrections in feedback | Shown with its reasoning, and editable | The model cites evidence for each criterion; the rating is calculated from that |
 | Provider outage, or a model changing without notice | Medium | Medium | Failure rate, response times, version recorded on every decision | Retry, then a backup model, then the review queue | Pin model versions; run the test suite weekly as an early warning |
@@ -98,6 +99,7 @@ The expected result is that the analyst's eight hours a week drop to one or two:
   - Turn on automatic routing for the service lines that have earned it.
   - Reduce cost by caching the model's standing instructions.
   - Test whether a cheaper first-pass classifier, trained on the accumulated corrections, can handle the easy cases.
+  - Pilot on-demand external enrichment for prospects not in the CRM, comparing Exa, Parallel and Clay on accuracy, coverage and cost per lookup.
 
 ### Assumptions
 

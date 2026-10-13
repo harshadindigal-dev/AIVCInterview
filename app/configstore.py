@@ -178,6 +178,11 @@ def validate(d: Domain) -> list[str]:
         if c.get("existing_client") and rp not in partners:
             errors.append(f"crm: {c.get('company_name')!r} is an existing client but relationship_partner "
                           f"{rp!r} is not in routing.yaml relationship_partners")
+    names = {str(c.get("company_name", "")).lower() for c in crm.get("companies") or []}
+    for c in crm.get("companies") or []:
+        pg = c.get("parent_group")
+        if pg and str(pg).lower() not in names:
+            errors.append(f"crm: {c.get('company_name')!r} has parent_group {pg!r}, which is not a company in the CRM")
     if not errors:
         try:
             build_system_prompt(d)

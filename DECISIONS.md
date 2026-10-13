@@ -114,3 +114,8 @@ Short entries: decision, alternatives considered, why.
 - **Decision:** Reassign requires one of: wrong service line, lead capacity or leave, client relationship, conflict or independence, other. The Health page's headline is the **model-error rate**: reassignments for a wrong service line plus Mark misclassified, per predicted line. Any-reassignment rate is shown alongside it. `export_feedback.py` turns only model-error corrections into new labels.
 - **Alternatives:** A free-text reason (can't be aggregated), or counting every reassignment as an error (the previous behaviour).
 - **Why:** Reassignment rate per line is the main drift signal in WRITEUP.md. A lead on holiday or a relationship partner taking over would otherwise look like classifier drift, and would turn into wrong training labels.
+
+## D25. Richer sample CRM data with group resolution; external enrichment deferred
+- **Decision:** The sample CRM grew from 7 to 28 companies. It now holds client history, services in use, the last engagement, open opportunities, company facts and parent/subsidiary links. A subsidiary inherits its parent's client status, partner and conflicts. Audit clients get a display-only independence reminder.
+- **Constraint:** None of the new client or conflict records match a test enquiry. Replaying routing for all 48 stored enquiries under the old and new data showed zero changes, so the evaluation results remain valid.
+- **External enrichment (Exa, Parallel, Clay) is a documented next step, not built.** It needs a lawful-basis decision, cost controls and a policy that external data can raise a review but never route on its own (ARCHITECTURE.md). Building it in the prototype would add a second paid dependency for reviewers.

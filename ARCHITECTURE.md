@@ -25,7 +25,15 @@ flowchart LR
 
 **Intake.** The submission is validated, and the original wording is kept exactly as written. If the same person sends essentially the same text again within a week, it is linked to the first submission instead of being triaged twice.
 
-**Enrichment.** The CRM shows whether the company is an existing client, who the relationship partner is, and whether there is a conflict of interest. The size the client stated is compared with the size on record. In the prototype these lookups read sample data, through the same interface a real CRM integration would use. A failed lookup never holds an enquiry up.
+**Enrichment.** The CRM shows:
+- whether the company is an existing client, and since when;
+- the relationship partner, the services the firm already provides, and the most recent engagement;
+- any open opportunities;
+- any conflict of interest.
+
+Subsidiaries are resolved to their group. A newly acquired business inherits its parent's client status, partner and conflicts, so it's handled as part of that client from day one. Company records add headcount, revenue, headquarters and ownership. Where the client's stated size or industry disagrees with the record, the difference is flagged. For an audit client asking for other services, the team lead sees a reminder to check independence.
+
+In the prototype these lookups read sample data, through the same interfaces a real integration would use. A failed lookup never holds an enquiry up.
 
 **Classification.** The model's instructions are generated from two documents the firm owns: the service-line definitions and the complexity and urgency rubric. The enquiry is passed in as untrusted text, and any instructions inside it are ignored and flagged.
 
@@ -78,12 +86,36 @@ At this volume the cost difference is small, so quality wins.
 
 Once a model is chosen, calling that provider directly from the firm's own cloud account is a small change, because the model sits behind a single interface.
 
+## Next step: on-demand external enrichment
+
+Internal records only cover companies the firm already knows, and most enquiries come from prospects. The next step is to look outward, but only when it would change a decision.
+
+**What to fetch:**
+- headcount, revenue and sector;
+- ownership and group structure (parents, subsidiaries, recent acquisitions), which strengthens the conflict check;
+- recent events such as funding rounds, acquisitions or regulatory action, which change urgency or complexity.
+
+**Where from:**
+- **Exa,** a search engine built for AI applications. It's suited to finding recent news and filings about a company from its name or web domain.
+- **Parallel,** a web research API that answers structured questions ("who owns this company?") with cited sources.
+- **Clay,** an enrichment platform that combines many commercial data providers. It's useful for firmographics such as headcount and revenue.
+
+**When:** on demand, not for every enquiry. It runs when the company isn't in the CRM, when the work looks complex or high-value, or when a team lead asks for it with one click from the enquiry.
+
+**Guardrails:**
+- Send only the company name and web domain, never the enquiry text or the contact's personal details.
+- Cache results with their source and date, and label them as external and unverified alongside internal data.
+- External findings can send an enquiry to review (for example, a parent company the firm is conflicted with). They can never route it to a partner on their own.
+- Cap the cost per enquiry, and confirm the lawful basis for processing with the firm's data protection team.
+
+Each provider would be another implementation of the existing company-data interface, so routing and the user interface would not change.
+
 ## Integration points
 
 | Component | Prototype | Production |
 |---|---|---|
 | Enquiry form | Built-in submission page | Website form posts the same fields |
-| Client and company data | Sample data behind the CRM interface | CRM (Dynamics, Salesforce) and Companies House or D&B |
+| Client and company data | Sample CRM and company records (28 companies, including group structures) | CRM (Dynamics, Salesforce) and Companies House or D&B, with Exa, Parallel or Clay on demand for prospects |
 | Conflict check | Field in the sample data | The firm's conflicts system, checked before routing |
 | Language model | OpenRouter | Zero-retention providers only, or the provider directly |
 | Notifications | Rendered and logged | Email and Slack with signed action links |

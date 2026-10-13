@@ -129,8 +129,10 @@ flowchart LR
 - **Dedupe:** the same email with near-identical text within 7 days is linked to the original. It skips triage and sends no second notification.
 
 ### 2. Enrich ([`enrich.py`](app/pipeline/enrich.py))
-- `CRMClient.lookup(email_domain, company_name)` returns existing client, relationship partner and conflict flag. Free-mail domains such as gmail.com only ever match by company name.
-- `CompanyData.lookup(company_name)` returns the recorded headcount and industry, which are compared with what the client stated.
+- `CRMClient.lookup(email_domain, company_name)` returns existing client, relationship partner, conflict flag, services in use, client-since date, last engagement and open opportunities. Free-mail domains such as gmail.com only ever match by company name.
+- **Group resolution:** a subsidiary of an existing client, such as a newly acquired business, inherits the parent's client status, partner and services. It also inherits any conflict the parent has.
+- **Audit-client reminder:** for an audit client asking for other services, the enquiry page shows a reminder to check independence. It's display only; it doesn't change routing yet.
+- `CompanyData.lookup(company_name)` returns the recorded headcount, industry, headquarters, revenue and ownership. Headcount and industry are compared with what the client stated.
 - Both are **interfaces with a mock implementation** that reads [`config/crm_clients.json`](config/crm_clients.json). A production CRM or Companies House client would be a second implementation.
 - Enrichment is best-effort: a failure is recorded and never blocks the enquiry.
 
@@ -283,7 +285,7 @@ Why OpenRouter, and the trade-offs (data retention, the extra hop, calling a pro
 |---|---|
 | `make up` | Build and start on http://localhost:8000; seeds on first start |
 | `make down` | Stop, keeping the database |
-| `make test` | Run the 81 tests inside the image. One makes a live call (about $0.05) and is skipped without a key |
+| `make test` | Run the 84 tests inside the image. One makes a live call (about $0.05) and is skipped without a key |
 | `make eval` | Evaluate `TRIAGE_MODEL` + `EVAL_MODELS` and write `eval_results/` (about $3) |
 | `make reset-db` | Delete the database volume; the next `make up` re-seeds (about $2) |
 | `make logs` | Follow the structured JSON logs |
@@ -352,7 +354,7 @@ config/                taxonomy.yaml · rubric.yaml · routing.yaml · crm_clien
 data/                  synthetic_enquiries.jsonl (labelled dataset)
 eval_results/          Per-model results JSON + failure_notes.md
 scripts/               run_eval.py · triage.py · export_feedback.py
-tests/                 81 tests
+tests/                 84 tests
 docs/screenshots/      README screenshots
 ```
 
@@ -366,13 +368,16 @@ docs/screenshots/      README screenshots
 - **25 hard cases:** 2 each of multi-service, vague, urgency mismatch, small company with a complex problem, existing client, conflict flag, out of scope, prompt injection, risk vs audit, tech vs strategy and duplicate submission, plus 1 each of spam, job application and vendor pitch.
 - **Written to read like real people:** varied length, typos, rambling, British and American spelling.
 - **Every gold label was checked by hand.** Labels are left null where no correct answer exists (for example, "advice re our accounts" has no gold service line), and those records are excluded from that metric (D4).
-- [`config/crm_clients.json`](config/crm_clients.json) contains matching existing clients, conflict-flagged companies, and two companies whose stated size disagrees with the record.
+- [`config/crm_clients.json`](config/crm_clients.json) holds 28 fictional companies.
+  - **Existing clients,** some with subsidiaries, carry client-since dates, services in use, the last engagement and open opportunities.
+  - **Conflicts** are linked to live mandates.
+  - **Company records** give headcount, revenue, headquarters and ownership for many of the test companies. A few deliberately disagree with what the client stated.
 
 ---
 
 ## Tests
 
-81 tests, all passing on Python 3.12 in the image and 3.13 locally. Unit tests never hit the network; LLM calls go through a scripted fake or a mocked HTTP layer.
+84 tests, all passing on Python 3.12 in the image and 3.13 locally. Unit tests never hit the network; LLM calls go through a scripted fake or a mocked HTTP layer.
 
 | Area | What's covered |
 |---|---|
@@ -428,4 +433,5 @@ See **[WRITEUP.md](WRITEUP.md)** (half a page).
 - **An audit-independence rule:** an existing audit client asking for a prohibited non-audit service (for example valuations or system implementation) becomes a hard stop. This is the most important domain rule not yet modelled.
 - **Test whether the agreement check earns its cost:** measure it in shadow mode. If it never fires, drop it and save two-thirds of the spend.
 - **Prompt caching**, and an **embedding or fine-tuned first-pass classifier** once a few hundred feedback-labelled enquiries exist.
+- **On-demand external enrichment** for prospects the CRM doesn't know, using **Exa** (recent news and filings), **Parallel** (cited answers to questions such as "who owns this company?") or **Clay** (firmographics from many data providers). Only the company name and domain are sent. Results are labelled as external and can send an enquiry to review but never route it on their own. Details in [ARCHITECTURE.md](ARCHITECTURE.md#next-step-on-demand-external-enrichment).
 - **Real integrations:** CRM, conflicts system, email and Slack with signed action links, and SSO.

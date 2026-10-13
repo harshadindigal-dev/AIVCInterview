@@ -110,11 +110,30 @@
   <section class="card">
     <h2 class="card-title">Enrichment</h2>
     {% if enr %}
+    {% if enr.audit_client and p and p.primary_service_line not in ('audit', 'not_an_enquiry', 'out_of_scope') %}
+    <div class="alert alert-warn small">Audit client: {{ domain.line_name(p.primary_service_line) }} work needs an independence check before it is accepted.</div>
+    {% endif %}
     <dl class="kv">
       <dt>Existing client</dt>
-      <dd>{% if enr.existing_client %}<strong>Yes</strong> · {{ enr.crm_company_name }} (matched on {{ (enr.matched_on or '') | replace('_', ' ') }}){% else %}No{% endif %}</dd>
+      <dd>{% if enr.existing_client %}<strong>Yes</strong> · {{ enr.crm_company_name }}
+          {% if enr.via_group %}<span class="pill pill-sm">via group: {{ enr.parent_group }}</span>{% else %}<span class="muted small">(matched on {{ (enr.matched_on or '') | replace('_', ' ') }})</span>{% endif %}
+          {% if enr.client_since %}<div class="small muted">Client since {{ enr.client_since }}</div>{% endif %}
+        {% elif enr.crm_company_name %}No · known to the CRM as {{ enr.crm_company_name }}{% if enr.parent_group %} (part of {{ enr.parent_group }}){% endif %}
+        {% else %}No{% endif %}</dd>
       <dt>Relationship partner</dt>
       <dd>{% if enr.relationship_partner %}{{ domain.routing.relationship_partners[enr.relationship_partner].name }}{% else %}—{% endif %}</dd>
+      {% if enr.services_in_use %}
+      <dt>Services in use</dt>
+      <dd>{% for sline in enr.services_in_use %}<span class="pill pill-sm">{{ domain.line_name(sline) }}</span>{% endfor %}</dd>
+      {% endif %}
+      {% if enr.last_engagement %}
+      <dt>Last engagement</dt>
+      <dd>{{ enr.last_engagement.summary }} <span class="muted small">({{ domain.line_name(enr.last_engagement.service_line) }}, {{ enr.last_engagement.year }})</span></dd>
+      {% endif %}
+      {% if enr.open_opportunities %}
+      <dt>Open opportunities</dt>
+      <dd>{% for o in enr.open_opportunities %}<div>{{ o }}</div>{% endfor %}</dd>
+      {% endif %}
       <dt>Conflict flag</dt>
       <dd>{% if enr.conflict_flag %}<span class="pill flag flag-conflict">Conflict</span> {{ enr.conflict_reason }}{% else %}None{% endif %}</dd>
       <dt>Company size</dt>
@@ -125,7 +144,16 @@
       </dd>
       <dt>Industry</dt>
       <dd>Stated {{ e.industry }}{% if enr.recorded_industry %} · recorded {{ enr.recorded_industry }}{% if enr.industry_check == 'mismatch' %} <span class="warn-marker">&#9888; differs</span>{% endif %}{% endif %}</dd>
+      {% if enr.hq_country or enr.annual_revenue_gbp_m or enr.ownership %}
+      <dt>Company facts</dt>
+      <dd>{{ [enr.hq_country, ('£' ~ '{:,.0f}'.format(enr.annual_revenue_gbp_m) ~ 'm revenue') if enr.annual_revenue_gbp_m else None, enr.ownership] | select | join(' · ') }}</dd>
+      {% endif %}
+      {% if enr.notes %}
+      <dt>CRM note</dt>
+      <dd class="small">{{ enr.notes }}</dd>
+      {% endif %}
     </dl>
+    <p class="small muted">Source: CRM and company records (sample data in this prototype).</p>
     {% if enr.error %}<p class="alert alert-warn small">Enrichment error: {{ enr.error }}</p>{% endif %}
     {% else %}<p class="muted">{{ 'Skipped (duplicate).' if e.duplicate_of else 'Not run yet.' }}</p>{% endif %}
   </section>
