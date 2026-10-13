@@ -8,6 +8,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from app.config import Domain
+from app.feedback import REASSIGN_REASONS, is_model_error
 from app.models import Enquiry, Feedback, PipelineRun, utcnow
 
 
@@ -38,24 +39,33 @@ def compute(session: Session, domain: Domain) -> dict[str, Any]:
     routable = [e for e in triaged if (first_run.get(e.id) and
                                        not (first_run[e.id].final_destination or "").startswith("archive"))]
 
-    # Reassignment: any reassign / misclassified action, attributed to the originally predicted line.
-    changed: dict[str, Feedback] = {}
-    for f in sorted(fb, key=lambda f: f.created_at):
+    # Reassignment, attributed to the originally predicted line. "Model error" counts only
+    # reassignments for a wrong service line plus Mark misclassified; capacity, relationship
+    # and conflict moves are tracked separately so they don't look like classifier drift.
+    changed: set[str] = set()
+    model_errors: set[str] = set()
+    for f in fb:
         if f.action in ("reassign", "misclassified"):
-            changed.setdefault(f.enquiry_id, f)
+            changed.add(f.enquiry_id)
+            if is_model_error(f):
+                model_errors.add(f.enquiry_id)
     by_line_total: Counter = Counter()
     by_line_changed: Counter = Counter()
+    by_line_errors: Counter = Counter()
     for e in routable:
         run = first_run[e.id]
         line = (run.parsed or {}).get("primary_service_line") or "unclassified"
         by_line_total[line] += 1
-        if e.id in changed:
-            by_line_changed[line] += 1
+        by_line_changed[line] += e.id in changed
+        by_line_errors[line] += e.id in model_errors
     reassign_by_line = [
         {"line": line, "name": domain.line_name(line), "total": by_line_total[line], "changed": by_line_changed[line],
-         "rate": _pct(by_line_changed[line], by_line_total[line])}
+         "errors": by_line_errors[line], "rate": _pct(by_line_changed[line], by_line_total[line]),
+         "error_rate": _pct(by_line_errors[line], by_line_total[line])}
         for line in domain.outcome_ids + ["unclassified"] if by_line_total[line]
     ]
+    reassign_reasons = Counter(REASSIGN_REASONS.get(f.reason_category or "", "Not recorded")
+                               for f in fb if f.action == "reassign")
 
     went_to_review = [e for e in triaged if first_run.get(e.id) and
                       (first_run[e.id].final_destination or "").startswith("review")]
@@ -85,6 +95,8 @@ def compute(session: Session, domain: Domain) -> dict[str, Any]:
         "triaged": len(triaged),
         "duplicates": sum(1 for e in enqs if e.duplicate_of),
         "reassignment_rate": _pct(len([e for e in routable if e.id in changed]), len(routable)),
+        "model_error_rate": _pct(len([e for e in routable if e.id in model_errors]), len(routable)),
+        "reassign_reasons": reassign_reasons.most_common(),
         "reassignment_by_line": reassign_by_line,
         "review_queue_rate": _pct(len(went_to_review), len(triaged)),
         "review_reasons": review_reasons.most_common(),

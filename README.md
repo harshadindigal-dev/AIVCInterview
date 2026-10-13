@@ -17,6 +17,7 @@ Anything uncertain, conflicted or suspicious goes to a human review queue instea
 ## Contents
 
 - [Where to find what the brief asks for](#where-to-find-what-the-brief-asks-for)
+- [Screenshots](#screenshots)
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [A tour of the app](#a-tour-of-the-app)
@@ -45,9 +46,21 @@ Anything uncertain, conflicted or suspicious goes to a human review queue instea
 | Routes to the right team lead | `route.py`, applying the rules in [`config/routing.yaml`](config/routing.yaml) |
 | Synthetic data | [`data/synthetic_enquiries.jsonl`](data/synthetic_enquiries.jsonl): 50 hand-labelled enquiries, half of them deliberately hard |
 | Architecture document (1–2 pages) | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Brief write-up (half a page) | [WRITEUP.md](WRITEUP.md): what breaks first, what to monitor, and the fallback when the model is wrong |
+| Brief write-up (half a page) | [WRITEUP.md](WRITEUP.md): a half-page answer on what breaks first, what to monitor, and the fallback when the model is wrong. Below it: a ranked failure-mode table, a monitoring plan with thresholds and owners, a fallback ladder, rollout exit criteria and a 90-day plan |
 | Evidence, including failures | The `/eval` page, [Evaluation](#evaluation) below, [`eval_results/failure_notes.md`](eval_results/failure_notes.md) |
 | Trade-offs behind each choice | [DECISIONS.md](DECISIONS.md): 23 short entries, each with the decision, the alternatives considered and why |
+
+---
+
+## Screenshots
+
+These are for reviewing without running anything; the app needs an OpenRouter key to run.
+
+| | |
+|---|---|
+| **Inbox:** every enquiry, sortable and filterable, with what was routed automatically vs sent to a human ![Inbox](docs/screenshots/inbox.png) | **Enquiry detail:** the triage card, *Why it went here* (every rule, the deciding one highlighted), enrichment ![Enquiry detail](docs/screenshots/enquiry-detail.png) |
+| **Review queue:** each card says why it needs a human; accept or route in one click ![Review queue](docs/screenshots/review-queue.png) | **Evaluation:** three models compared, confusion matrices, failures, and an honest write-up ![Evaluation](docs/screenshots/evaluation.png) |
+| **Configuration:** the business logic in plain English, editable with an impact preview ![Configuration](docs/screenshots/configuration.png) | **Health:** model-error rate per service line, review reasons, service-line mix, latency and cost ![Health](docs/screenshots/health.png) |
 
 ---
 
@@ -176,15 +189,17 @@ Server-rendered Jinja2 templates with HTMX and one hand-written CSS file. There 
 | Page | What it's for |
 |---|---|
 | **Inbox** (`/`) | Every enquiry with an outcome summary: routed automatically / sent to review / archived / duplicates. Columns: received, company (with size), industry, summary, service line, complexity, urgency (stated → inferred, with a warning when they differ), destination and status. **Every column heading except Summary sorts**, by meaning rather than alphabet: status puts "in review" first, complexity puts complex first, urgency puts high first. There are filters for service line, industry, status and destination, plus **search** over company, contact, summary and the enquiry text. Sort and filters are kept in the URL, so a view can be bookmarked. |
-| **Enquiry detail** (`/enquiries/{id}`) | The centre of the demo. Shows: the original text with key entities highlighted; the triage card (summary, service lines, complexity and rationale, stated vs inferred urgency, flags, agreement such as "3/3 runs agreed" or "2/3 agreed: tax vs deals", questions for the client); **Why it went here** (every rule with its result, the deciding one highlighted); enrichment (existing client, partner, conflict, stated vs recorded size); actions (**Accept**, **Reassign** with a reason, **Mark misclassified**); history; and a **Technical details** panel with the prompt and config hash, model, provider, latency per step, tokens, cost and the raw JSON from all 3 runs. |
+| **Enquiry detail** (`/enquiries/{id}`) | The centre of the demo. Shows: the original text with key entities highlighted; the triage card (summary, service lines, complexity and rationale, stated vs inferred urgency, flags, agreement such as "3/3 runs agreed" or "2/3 agreed: tax vs deals", questions for the client); **Why it went here** (every rule with its result, the deciding one highlighted); enrichment (existing client, partner, conflict, stated vs recorded size); actions (**Accept**, **Reassign** with a required reason, **Mark misclassified**); history; and a **Technical details** panel with the prompt and config hash, model, provider, latency per step, tokens, cost and the raw JSON from all 3 runs. |
 | **Review queue** (`/review`) | Only enquiries that need a human, as cards headed by *why* ("Possible prompt injection", "Conflict flag: …", "Runs disagreed on service line"). Accept the suggestion, route to any lead, or close out-of-scope ones, without leaving the page. |
 | **Submit enquiry** (`/submit`) | The real form fields, a **Load sample** menu grouped into clear and hard cases, and live step-by-step progress (Intake → Enrich → Classify → Route → Notify) before landing on the detail page. |
 | **Evaluation** (`/eval`) | Headline tiles, a model comparison table, confusion matrices for service line and complexity (shaded HTML tables), the failure table with a link to each enquiry, routing accuracy by case type, and a "What this tells us" write-up. Warns when results were produced with a different prompt from the live one. |
 | **Notifications log** (`/notifications`) | What would have been sent to team leads and the review channel, rendered as it would arrive. |
-| **Health** (`/metrics`, `/metrics.json`) | Day-one production metrics computed from the database: reassignment rate (overall and per predicted service line), review-queue rate and reasons, service-line mix over 7 and 30 days, classification failure rate, p50/p95 latency, mean cost, run agreement, and which providers and models answered. |
+| **Health** (`/metrics`, `/metrics.json`) | Day-one production metrics computed from the database: **model-error rate** (overall and per predicted service line; see below), any-reassignment rate, review-queue rate and reasons, service-line mix over 7 and 30 days, classification failure rate, p50/p95 latency, mean cost, run agreement, and which providers and models answered. |
 | **Configuration** (`/config`) | See [the next section](#configuration-the-business-logic-visible-and-editable). |
 
-**Feedback loop:** Accept, Reassign and Mark misclassified each write a feedback row (old value, new value, reason). The Health page reads these rows, and [`scripts/export_feedback.py`](scripts/export_feedback.py) turns them into new labelled records in the dataset's format. That is how production corrections become evaluation data.
+**Feedback loop:** Accept, Reassign and Mark misclassified each write a feedback row (old value, new value, reason).
+- **Every reassignment needs a reason:** *wrong service line*, *lead capacity or leave*, *client relationship*, *conflict or independence*, or *other*.
+- **Only a wrong service line (or Mark misclassified) counts as a model error,** both on the Health page and in the exported eval data. Without this, a lead on holiday would look like classifier drift. The Health page reads these rows, and [`scripts/export_feedback.py`](scripts/export_feedback.py) turns them into new labelled records in the dataset's format. That is how production corrections become evaluation data.
 
 ---
 
@@ -268,7 +283,7 @@ Why OpenRouter, and the trade-offs (data retention, the extra hop, calling a pro
 |---|---|
 | `make up` | Build and start on http://localhost:8000; seeds on first start |
 | `make down` | Stop, keeping the database |
-| `make test` | Run the 80 tests inside the image. One makes a live call (about $0.05) and is skipped without a key |
+| `make test` | Run the 81 tests inside the image. One makes a live call (about $0.05) and is skipped without a key |
 | `make eval` | Evaluate `TRIAGE_MODEL` + `EVAL_MODELS` and write `eval_results/` (about $3) |
 | `make reset-db` | Delete the database volume; the next `make up` re-seeds (about $2) |
 | `make logs` | Follow the structured JSON logs |
@@ -337,7 +352,8 @@ config/                taxonomy.yaml · rubric.yaml · routing.yaml · crm_clien
 data/                  synthetic_enquiries.jsonl (labelled dataset)
 eval_results/          Per-model results JSON + failure_notes.md
 scripts/               run_eval.py · triage.py · export_feedback.py
-tests/                 80 tests
+tests/                 81 tests
+docs/screenshots/      README screenshots
 ```
 
 ---
@@ -356,7 +372,7 @@ tests/                 80 tests
 
 ## Tests
 
-80 tests, all passing on Python 3.12 in the image and 3.13 locally. Unit tests never hit the network; LLM calls go through a scripted fake or a mocked HTTP layer.
+81 tests, all passing on Python 3.12 in the image and 3.13 locally. Unit tests never hit the network; LLM calls go through a scripted fake or a mocked HTTP layer.
 
 | Area | What's covered |
 |---|---|
@@ -365,7 +381,7 @@ tests/                 80 tests
 | OpenRouter client (HTTP mocked) | Request shape: `require_parameters`, strict `json_schema`, usage accounting, attribution headers, fallback `models`. Status codes classified as retryable or not; a 429 is retried |
 | Pipeline | Audit row contents, original text kept exactly, dedupe skips triage, failure goes to review, archive sends no notification, feedback rows |
 | Prompt | Every taxonomy id and rubric criterion appears in the prompt; the delimiter can't be closed early |
-| Web app | Submit → progress → detail flow, validation errors, review-queue actions, **reassign changes the Health metrics**, empty states, inbox sorting, filtering and search |
+| Web app | Submit → progress → detail flow, validation errors, review-queue actions, **reassign changes the Health metrics**, a reassignment for capacity is not counted as a model error, empty states, inbox sorting, filtering and search |
 | Configuration | Validation blocks bad edits; the preview shows the routing impact; save applies **live without a restart** and preserves comments; rename a lead then revert; a taxonomy edit changes the prompt sent and the stored prompt hash; stale-eval warning |
 | Live end-to-end | The real model on the injection case: flagged, sent to review, never routed to a "CEO" |
 
@@ -410,7 +426,6 @@ See **[WRITEUP.md](WRITEUP.md)** (half a page).
 - **A held-out test set**, written and labelled by someone other than the taxonomy author, plus a second labeller on complexity. Then fix the "board-level" rubric wording (now a form field on the Configuration page) and measure the change on that set.
 - **Evidence-based complexity:** the model reports each rubric criterion with a quote from the enquiry, and code works out the level. That targets the measured over-calling directly and makes it tunable without prompt changes.
 - **An audit-independence rule:** an existing audit client asking for a prohibited non-audit service (for example valuations or system implementation) becomes a hard stop. This is the most important domain rule not yet modelled.
-- **Reasons on reassignment** (wrong line / capacity / relationship), so the reassignment rate measures model errors rather than workload.
 - **Test whether the agreement check earns its cost:** measure it in shadow mode. If it never fires, drop it and save two-thirds of the spend.
 - **Prompt caching**, and an **embedding or fine-tuned first-pass classifier** once a few hundred feedback-labelled enquiries exist.
 - **Real integrations:** CRM, conflicts system, email and Slack with signed action links, and SSO.

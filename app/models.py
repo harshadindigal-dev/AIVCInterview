@@ -90,6 +90,7 @@ class Feedback(SQLModel, table=True):
     old_value: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     new_value: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     reason: str | None = None
+    reason_category: str | None = None    # for reassign: see feedback.REASSIGN_REASONS
     source: str = "user"                  # user | seed (demo feedback created at startup)
 
 
@@ -115,7 +116,8 @@ def make_engine(url: str):
 
 # Columns added after the first release. SQLite's create_all does not alter
 # existing tables, so add them in place (idempotent).
-_ADDED_COLUMNS = {"pipelinerun": {"prompt_hash": "VARCHAR", "config_hash": "VARCHAR"}}
+_ADDED_COLUMNS = {"pipelinerun": {"prompt_hash": "VARCHAR", "config_hash": "VARCHAR"},
+                  "feedback": {"reason_category": "VARCHAR"}}
 
 
 def init_db(engine) -> None:

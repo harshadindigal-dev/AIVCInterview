@@ -39,7 +39,11 @@
           <option value="">Route to…</option>
           {% for l in leads %}<option value="{{ l.key }}">{{ l.name }} — {{ domain.line_name(l.key) }}</option>{% endfor %}
         </select>
-        <input name="reason" placeholder="Reason">
+        <select name="reason_category" aria-label="Why" required>
+          <option value="">Why?</option>
+          {% for k, v in reassign_reasons.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select>
+        <input name="reason" placeholder="Note">
         <button class="btn">Route</button>
       </form>
     </div>

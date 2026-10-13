@@ -9,6 +9,22 @@ from app.models import Enquiry, Feedback
 from app.pipeline.notify import reassignment_notification
 
 
+# Why a lead changed. Only a wrong service line is a model error; the others are
+# workload or relationship decisions and must not count against the classifier.
+REASSIGN_REASONS = {
+    "wrong_service_line": "Wrong service line (model error)",
+    "capacity": "Lead capacity or leave",
+    "client_relationship": "Client relationship",
+    "conflict": "Conflict or independence",
+    "other": "Other",
+}
+MODEL_ERROR_REASONS = {"wrong_service_line"}
+
+
+def is_model_error(f: Feedback) -> bool:
+    return f.action == "misclassified" or (f.action == "reassign" and f.reason_category in MODEL_ERROR_REASONS)
+
+
 def _snapshot(e: Enquiry) -> dict:
     return {"destination_type": e.destination_type, "destination_key": e.destination_key,
             "destination_name": e.destination_name, "service_line": e.service_line,
@@ -48,14 +64,17 @@ def accept_suggestion_from_review(session: Session, domain: Domain, enq: Enquiry
 
 
 def reassign(session: Session, domain: Domain, enq: Enquiry, lead_key: str, reason: str | None, base_url: str,
-             *, source: str = "user") -> Enquiry:
+             *, reason_category: str = "other", source: str = "user") -> Enquiry:
+    if reason_category not in REASSIGN_REASONS:
+        raise ValueError(f"unknown reassignment reason {reason_category!r}")
     lead = {"key": lead_key, **domain.routing["team_leads"][lead_key]}
     old = _snapshot(enq)
     enq.destination_type, enq.destination_key, enq.destination_name = "lead", lead_key, lead["name"]
     enq.status = "reassigned"
     session.add(Feedback(enquiry_id=enq.id, action="reassign", old_value=old, new_value=_snapshot(enq),
-                         reason=reason or None, source=source))
-    session.add(reassignment_notification(enq, lead, reason, base_url))
+                         reason=reason or None, reason_category=reason_category, source=source))
+    label = REASSIGN_REASONS[reason_category] + (f": {reason}" if reason else "")
+    session.add(reassignment_notification(enq, lead, label, base_url))
     session.add(enq)
     session.commit()
     return enq

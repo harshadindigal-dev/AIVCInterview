@@ -80,7 +80,7 @@ def test_archive_sends_no_notification(domain):
 def test_reassign_writes_feedback(domain):
     s, deps = setup(domain, FakeLLMClient())
     e = run_pipeline(s, EnquiryIn(**FORM), deps)
-    reassign(s, domain, e, "deals", "really a valuation", "http://x")
+    reassign(s, domain, e, "deals", "really a valuation", "http://x", reason_category="wrong_service_line")
     fb = s.exec(select(Feedback)).one()
-    assert fb.action == "reassign" and fb.old_value["destination_key"] == "tax"
+    assert fb.action == "reassign" and fb.reason_category == "wrong_service_line" and fb.old_value["destination_key"] == "tax"
     assert fb.new_value["destination_key"] == "deals" and e.status == "reassigned"

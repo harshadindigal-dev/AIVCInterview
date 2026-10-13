@@ -66,11 +66,14 @@ def test_reassign_changes_metrics(client):
     eid = submit_and_wait(client)
     before = client.get("/metrics.json").json()
     assert before["reassignment_rate"] == 0
+    assert client.post(f"/enquiries/{eid}/reassign", data={"lead_key": "deals", "context": "detail"},
+                       headers={"HX-Request": "true"}).status_code == 422  # reason is required
     r = client.post(f"/enquiries/{eid}/reassign", data={"lead_key": "deals", "reason": "valuation",
+                                                       "reason_category": "wrong_service_line",
                                                        "context": "detail"}, headers={"HX-Request": "true"})
     assert r.headers["HX-Redirect"] == f"/enquiries/{eid}?done=reassigned"
     after = client.get("/metrics.json").json()
-    assert after["reassignment_rate"] == 1.0
+    assert after["reassignment_rate"] == 1.0 and after["model_error_rate"] == 1.0
     assert after["feedback_counts"] == {"reassign": 1}
     assert "Sofia Marchetti" in client.get("/notifications").text
 
@@ -109,3 +112,13 @@ def test_inbox_sorting_filters_and_search(client):
     assert client.get("/enquiries?sort=bogus&dir=sideways").status_code == 200  # falls back to defaults
     partial = client.get("/enquiries?sort=status&dir=asc", headers={"HX-Request": "true", "HX-Target": "inbox-table"}).text
     assert 'value="status" hx-swap-oob="true"' in partial
+
+
+def test_capacity_reassignment_is_not_a_model_error(client):
+    eid = submit_and_wait(client)
+    client.post(f"/enquiries/{eid}/reassign", data={"lead_key": "deals", "reason_category": "capacity",
+                                                   "reason": "Daniel on leave"}, headers={"HX-Request": "true"})
+    m = client.get("/metrics.json").json()
+    assert m["reassignment_rate"] == 1.0 and m["model_error_rate"] == 0.0
+    assert m["reassign_reasons"] == [["Lead capacity or leave", 1]]
+    assert "Lead capacity or leave" in client.get(f"/enquiries/{eid}").text

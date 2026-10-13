@@ -109,3 +109,8 @@ Short entries: decision, alternatives considered, why.
 ## D23. Every run and eval result records the prompt hash and config hash
 - **Why:** Once prompts can change from the UI, `PROMPT_VERSION = "v1"` no longer identifies the prompt. Each pipeline run stores the sha256 of the exact system prompt and of the loaded config. The eval page and the prompt tab warn when evaluation results were produced with a different prompt from the live one.
 - **Backfill:** existing eval results and runs were backfilled. `config/` had not changed in git between the eval run and the backfill, and the files say so (`hashes_note`).
+
+## D24. Every reassignment carries a reason; only "wrong service line" is a model error
+- **Decision:** Reassign requires one of: wrong service line, lead capacity or leave, client relationship, conflict or independence, other. The Health page's headline is the **model-error rate**: reassignments for a wrong service line plus Mark misclassified, per predicted line. Any-reassignment rate is shown alongside it. `export_feedback.py` turns only model-error corrections into new labels.
+- **Alternatives:** A free-text reason (can't be aggregated), or counting every reassignment as an error (the previous behaviour).
+- **Why:** Reassignment rate per line is the main drift signal in WRITEUP.md. A lead on holiday or a relationship partner taking over would otherwise look like classifier drift, and would turn into wrong training labels.

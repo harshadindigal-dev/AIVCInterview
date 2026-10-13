@@ -2,8 +2,11 @@
 
     python -m scripts.export_feedback [--out data/feedback_export.jsonl] [--include-seed]
 
-Each reassignment or misclassification becomes a record whose gold label is
-what the human chose. Accepts become records confirming the model's labels.
+Each correction (Mark misclassified, or a reassignment whose reason is "wrong
+service line") becomes a record whose gold label is what the human chose.
+Accepts become records confirming the model's labels. Reassignments for other
+reasons (capacity, relationship, conflict) say nothing about the label and are
+skipped.
 This is how production feedback turns into new evaluation data. Review the
 output before adding it to the eval set: a reassignment can be about workload,
 not classification (the reason field usually says which).
@@ -43,6 +46,8 @@ def main() -> None:
             if f.action == "misclassified":
                 line, cx = f.new_value.get("service_line"), f.new_value.get("complexity")
             elif f.action == "reassign":
+                if f.reason_category != "wrong_service_line":
+                    continue  # a workload/relationship move, not a label correction
                 line, cx = lead_to_line.get(f.new_value.get("destination_key")), f.old_value.get("complexity")
             else:
                 line, cx = f.old_value.get("service_line"), f.old_value.get("complexity")

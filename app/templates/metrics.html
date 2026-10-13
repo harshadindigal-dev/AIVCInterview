@@ -10,7 +10,7 @@
 <div class="empty"><p class="empty-title">No enquiries processed yet.</p><p>Metrics appear once enquiries have been triaged.</p></div>
 {% else %}
 <div class="tiles">
-  <div class="tile tile-key"><span class="tile-label">Reassignment rate</span><span class="tile-value">{{ m.reassignment_rate | pct(1) }}</span><span class="tile-sub">routed enquiries a human changed</span></div>
+  <div class="tile tile-key"><span class="tile-label">Model-error rate</span><span class="tile-value">{{ m.model_error_rate | pct(1) }}</span><span class="tile-sub">reassigned for a wrong service line, or corrected · any reassignment {{ m.reassignment_rate | pct(1) }}</span></div>
   <div class="tile"><span class="tile-label">Review-queue rate</span><span class="tile-value">{{ m.review_queue_rate | pct(1) }}</span><span class="tile-sub">{{ m.open_in_review }} open now</span></div>
   <div class="tile"><span class="tile-label">Classification failures</span><span class="tile-value">{{ m.classification_failure_rate | pct(1) }}</span><span class="tile-sub">of pipeline runs</span></div>
   <div class="tile"><span class="tile-label">Classify latency</span><span class="tile-value">{{ m.latency_classify_p50_ms | ms }}</span><span class="tile-sub">p50 · p95 {{ m.latency_classify_p95_ms | ms }}</span></div>
@@ -21,10 +21,10 @@
   <section class="card">
     <h2 class="card-title">Reassignment by predicted service line</h2>
     <div class="table-wrap"><table class="table compact-table">
-      <thead><tr><th>Predicted line</th><th>Triaged</th><th>Changed by a human</th><th>Rate</th></tr></thead>
-      <tbody>{% for r in m.reassignment_by_line %}<tr><td>{{ r.name }}</td><td>{{ r.total }}</td><td>{{ r.changed }}</td><td>{{ r.rate | pct }}</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>Predicted line</th><th>Triaged</th><th>Model errors</th><th>Error rate</th><th>Any reassignment</th></tr></thead>
+      <tbody>{% for r in m.reassignment_by_line %}<tr><td>{{ r.name }}</td><td>{{ r.total }}</td><td>{{ r.errors }}</td><td><strong>{{ r.error_rate | pct }}</strong></td><td>{{ r.changed }}</td></tr>{% endfor %}</tbody>
     </table></div>
-    <p class="small muted">A rising rate for one line is the first sign of taxonomy drift or a prompt regression.</p>
+    <p class="small muted">A rising <strong>error rate</strong> for one line is the first sign of taxonomy drift or a prompt regression (alert above 10% over two weeks). Reassignments for capacity, relationship or conflict are counted separately{% if m.reassign_reasons %}: {% for reason, n in m.reassign_reasons %}{{ reason }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}{% endif %}.</p>
   </section>
   <section class="card">
     <h2 class="card-title">Why enquiries went to review</h2>

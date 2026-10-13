@@ -167,7 +167,7 @@ def render(request: Request, name: str, status_code: int = 200, **ctx: Any) -> H
     settings = get_settings()
     with session(request) as s:
         rc = review_count(s)
-    base = dict(request=request, mode="LIVE", model=settings.triage_model, review_count=rc,
+    base = dict(request=request, mode="LIVE", reassign_reasons=fb.REASSIGN_REASONS, model=settings.triage_model, review_count=rc,
                 seed=dict(seed_mod.status), domain=get_domain(), status_labels=STATUS_LABELS,
                 rule_labels=RULE_LABELS, case_labels=CASE_LABELS, nav=ctx.pop("nav", ""))
     return templates.TemplateResponse(request, name, {**base, **ctx}, status_code=status_code)
@@ -331,13 +331,16 @@ def action_accept(request: Request, enquiry_id: str, context: str = Form("detail
 
 @app.post("/enquiries/{enquiry_id}/reassign")
 def action_reassign(request: Request, enquiry_id: str, lead_key: str = Form(...), reason: str = Form(""),
-                    context: str = Form("detail")):
+                    reason_category: str = Form(...), context: str = Form("detail")):
     domain = get_domain()
     if lead_key not in domain.routing["team_leads"]:
         raise HTTPException(400, "Unknown team lead")
+    if reason_category not in fb.REASSIGN_REASONS:
+        raise HTTPException(400, "Choose why you are reassigning")
     with session(request) as s:
         e = s.get(Enquiry, enquiry_id) or _404()
-        fb.reassign(s, domain, e, lead_key, reason.strip(), request.app.state.deps.base_url)
+        fb.reassign(s, domain, e, lead_key, reason.strip(), request.app.state.deps.base_url,
+                    reason_category=reason_category)
     return _after_action(request, enquiry_id, context, "reassigned")
 
 

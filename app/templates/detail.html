@@ -151,7 +151,11 @@
         <option value="">Reassign to…</option>
         {% for l in leads %}<option value="{{ l.key }}">{{ l.name }} — {{ domain.line_name(l.key) }}</option>{% endfor %}
       </select>
-      <input name="reason" placeholder="Reason (optional)">
+      <select name="reason_category" aria-label="Why" required>
+        <option value="">Why?</option>
+        {% for k, v in reassign_reasons.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select>
+      <input name="reason" placeholder="Note (optional)">
       <button class="btn">Reassign</button>
     </form>
   </div>
@@ -183,6 +187,7 @@
       {% for f in feedback %}
       <li><span class="muted small">{{ f.created_at | dt }}</span> <strong>{{ f.action | capitalize }}</strong>
         {% if f.action != 'accept' %}{{ f.old_value.destination_name }} → {{ f.new_value.destination_name }}{% endif %}
+        {% if f.reason_category %}<span class="pill pill-sm {{ 'err' if f.reason_category == 'wrong_service_line' }}">{{ reassign_reasons.get(f.reason_category, f.reason_category) }}</span>{% endif %}
         {% if f.reason %}<span class="muted">— {{ f.reason }}</span>{% endif %}
         {% if f.source == 'seed' %}<span class="pill pill-sm">seeded demo</span>{% endif %}</li>
       {% endfor %}
