@@ -46,7 +46,7 @@ Anything uncertain, conflicted or suspicious goes to a human review queue instea
 | Routes to the right team lead | `route.py`, applying the rules in [`config/routing.yaml`](config/routing.yaml) |
 | Synthetic data | [`data/synthetic_enquiries.jsonl`](data/synthetic_enquiries.jsonl): 50 hand-labelled enquiries, half of them deliberately hard |
 | Architecture document (1–2 pages) | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Brief write-up (half a page) | [WRITEUP.md](WRITEUP.md): a half-page answer on what breaks first, what to monitor, and the fallback when the model is wrong. Below it: a ranked failure-mode table, a monitoring plan with thresholds and owners, a fallback ladder, rollout exit criteria and a 90-day plan |
+| Brief write-up (half a page) | [WRITEUP.md](WRITEUP.md): a half-page answer on what breaks first, what to monitor, and the fallback when the model is wrong. Below it: risks ranked by likelihood, a monitoring plan with thresholds and owners, the escalation path, rollout criteria and a 90-day plan |
 | Evidence, including failures | The `/eval` page, [Evaluation](#evaluation) below, [`eval_results/failure_notes.md`](eval_results/failure_notes.md) |
 | Trade-offs behind each choice | [DECISIONS.md](DECISIONS.md): 23 short entries, each with the decision, the alternatives considered and why |
 

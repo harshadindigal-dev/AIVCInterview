@@ -1,86 +1,109 @@
-# Architecture
+# Intake Triage: Architecture
+
+## Overview
+
+The system sits between the firm's website enquiry form and its team leads. Each enquiry passes through five steps: intake, enrichment, classification, routing and notification. Every step writes to an audit record.
+
+A language model makes the judgement calls: what the client needs, how complex it is, and how urgent. Who receives the enquiry is decided by plain, predictable rules that the firm controls.
 
 ```mermaid
 flowchart LR
-    F[Web form] --> I[Intake<br/>validate · normalise · dedupe]
-    I -- duplicate --> DUP[(Link to original)]
-    I --> E[Enrich<br/>CRM · company data]
-    E --> C[Classify<br/>3 LLM runs · schema-validated]
-    C <--> OR[[OpenRouter → provider]]
-    C --> R[Route<br/>rules in routing.yaml]
-    R -- lead / partner --> N[Notify team lead]
-    R -- review --> Q[Review queue]
-    R -- archive --> A[(Archive)]
-    N & Q --> H[Human: Accept · Reassign · Correct]
-    H --> FB[(Feedback)] --> M[/metrics + eval data/]
-    Y[config/*.yaml] -.-> C & R
+    F[Website form] --> I[Intake<br/>validate · check for duplicates]
+    I -- resubmission --> DUP[(Linked to original)]
+    I --> E[Enrichment<br/>CRM · company records]
+    E --> C[Classification<br/>language model, three runs]
+    C --> R[Routing<br/>firm-defined rules]
+    R -- clear case --> N[Team lead notified]
+    R -- needs a person --> Q[Review queue]
+    R -- not an enquiry --> A[(Archived)]
+    N & Q --> H[Accept · Reassign · Correct]
+    H --> FB[(Feedback)] --> M[Monitoring and evaluation]
+    Y[Taxonomy, rubric, routing rules] -.-> C & R
 ```
 
-## Data flow
+## How an enquiry moves through the system
 
-1. **Intake.** The form is validated against fixed lists (description 10–5000 characters). The original text is stored verbatim. A hash of the email plus whitespace-normalised text links resubmissions within 7 days, and a linked duplicate skips triage.
-2. **Enrich.** `CRMClient` and `CompanyData` interfaces, mocked from JSON, return existing client, relationship partner, conflict flag, and stated vs recorded size. Enrichment is best-effort: a failure is logged and never blocks the enquiry.
-3. **Classify.**
-   - **Prompt:** generated from `taxonomy.yaml` and `rubric.yaml`. The enquiry sits in `<enquiry>` tags marked as untrusted.
-   - **Calls:** three concurrent calls. Run 0 is the answer; runs 1–2 vote, and agreement on service line and complexity is recorded. The model is never asked for a confidence score.
-   - **Output:** a strict JSON schema with enums taken from the taxonomy, validated again with Pydantic. Each run retries once on an API or validation error. If run 0 still fails, the result is `classification_failed`.
-   - **Fields:** primary and secondary service lines, complexity with a rationale citing the rubric, inferred urgency, key entities, questions to ask the client, flags, and a one-line summary.
-4. **Route.** A pure function, so the same inputs always give the same answer. It applies the rules below in order, and the first rule that fires decides:
-   1. hard stop (injection, conflict or failure) → review;
-   2. not an enquiry → archive;
-   3. existing client → relationship partner, with the line lead copied;
-   4. other review triggers (runs disagree, vague, out of scope) → review;
-   5. complex + high urgency → lead, with the practice head copied;
-   6. otherwise → lead.
+**Intake.** The submission is validated, and the original wording is kept exactly as written. If the same person sends essentially the same text again within a week, it is linked to the first submission instead of being triaged twice.
 
-   Every rule checked is written to a trace that the UI shows. The model can only name taxonomy ids, never a person.
-5. **Notify and audit.**
-   - **Notify:** a rendered email or Slack message with Accept and Reassign links, written to a log.
-   - **Audit:** one row per run, holding the enrichment, prompt version, requested and answering model, provider, all raw outputs, the parsed result, the trace, the destination, latency per step, tokens and reported cost.
+**Enrichment.** The CRM shows whether the company is an existing client, who the relationship partner is, and whether there is a conflict of interest. The size the client stated is compared with the size on record. In the prototype these lookups read sample data, through the same interface a real CRM integration would use. A failed lookup never holds an enquiry up.
 
-**Configuration:** `config/*.yaml` is the business logic, viewable and editable at `/config`. Every edit is validated, previewed against all stored enquiries (an offline replay of routing), applied without a restart, and versioned. Every run records the hash of the prompt and config that produced it.
+**Classification.** The model's instructions are generated from two documents the firm owns: the service-line definitions and the complexity and urgency rubric. The enquiry is passed in as untrusted text, and any instructions inside it are ignored and flagged.
 
-`run_pipeline()` is one callable. The demo runs it in a background thread; a job queue could call it unchanged.
+The model returns:
+- the primary and secondary service lines;
+- complexity, with a rationale that cites the rubric;
+- urgency as the model reads it;
+- key facts and open questions for the client;
+- risk flags;
+- a one-line summary.
+
+Every response is checked against a strict format. A failed response is retried once; if it fails again, the enquiry goes to a person.
+
+Each enquiry is classified three times. Models are poor judges of their own confidence, so the system compares the three answers instead of asking for a confidence score. Disagreement on the service line sends the enquiry to review.
+
+**Routing.** Routing is kept away from the model. These rules apply in order, and the first one that matches decides:
+
+1. Possible prompt injection, a conflict of interest, or a failed classification always goes to a person.
+2. Spam, job applications and sales pitches are archived.
+3. Existing clients go to their relationship partner, with the service-line lead copied.
+4. Vague or out-of-scope enquiries, and those where the runs disagreed, go to the review queue.
+5. Complex, urgent work goes to the service-line lead, with the practice head copied.
+6. Everything else goes to the service-line lead.
+
+The model can only choose from the firm's service lines, so it cannot name a person or invent a destination. Every rule checked, and the one that decided, is recorded and shown alongside the enquiry.
+
+**Notification and audit.** The chosen lead receives the summary, with one-click links to accept the enquiry or pass it on. Each run is stored in full: the submission, the enrichment, all three model responses, the routing decision, timings, tokens and cost. The pipeline is a single function. At about ten enquiries a day it runs as each one arrives, and it could move onto a job queue later without changes.
+
+## Keeping the business logic in the firm's hands
+
+The service-line definitions, the rubric, the team leads and the routing rules live in configuration, not code. Practice operations can change them on a configuration screen.
+
+Each change is validated first. The system then replays every past enquiry under the proposed rules and lists any that would now be routed differently. Saved changes take effect immediately, are logged with a note, and can be reverted. Every decision records which version of the prompt and configuration produced it.
 
 ## Model and API choices
 
-- **OpenRouter through the `openai` SDK, behind a one-class `LLMClient` interface.** Every request sends `provider.require_parameters: true`, so a provider can't silently ignore the schema, and `usage.include: true` for per-call cost.
-- **Default `anthropic/claude-sonnet-5.5`.** On the eval it had the best complexity accuracy (90%) and the most useful rationales.
-- **`claude-haiku-5.5` matched it on routing and every safety metric at 1/16th of the cost** ($2.50 vs $40 per 1,000), but scored only 66% on complexity.
-- **Structured output is `json_schema`, not a forced tool call,** because current Claude providers on OpenRouter reject forced `tool_choice` (DECISIONS D6).
+Models are accessed through OpenRouter: one interface across vendors, automatic fallback to a backup model, and the actual cost reported on every call. Each request requires the provider to honour the structured format, so it can't silently land somewhere that would ignore it.
 
-**Why OpenRouter.** One API across vendors makes model comparison a config change, and it gives built-in fallbacks and measured cost.
+Three models were tested on 50 hand-labelled enquiries:
+- **Claude Sonnet 5.5** is the default. It had the best complexity accuracy (90%) and the clearest reasoning.
+- **Claude Haiku 5.5** matched it on routing and every safety measure at about a sixteenth of the cost, but managed only 66% on complexity.
+- **Gemini 3.8 Flash** scored 73% on complexity and was the slowest.
 
-**Against it:** a third party handles client data, and there is an extra network hop. For production:
-- restrict to zero-data-retention providers;
-- keep prompt logging off and cover OpenRouter in the DPA;
-- redact names and phone numbers before the call.
+At this volume the cost difference is small, so quality wins.
 
-Once the eval has picked a model, the clean option is to call that provider directly, for example Bedrock in the firm's own account. That is one new `LLMClient` class. Keep OpenRouter for evaluation.
+**The trade-off** is that OpenRouter puts a third party in the path of client data. In production I would:
+- restrict it to zero-retention providers;
+- keep prompt logging off and cover it in the data processing agreement;
+- remove personal details before sending.
+
+Once a model is chosen, calling that provider directly from the firm's own cloud account is a small change, because the model sits behind a single interface.
 
 ## Integration points
 
-| Component | In the prototype | Production |
+| Component | Prototype | Production |
 |---|---|---|
-| Web form | Submit page (`EnquiryIn` schema) | Website form handler POSTs the same schema |
-| CRM / company data | Mocked from JSON behind interfaces | Dynamics/Salesforce, Companies House/D&B implementations |
-| Conflict check | A CRM field | The firm's conflicts system, as a hard gate |
-| LLM | OpenRouter, live | ZDR-restricted OpenRouter, or the provider directly |
-| Notifications | Logged, rendered | Email (Graph) and Slack, with signed Accept/Reassign links |
-| Storage | SQLite | Postgres (the URL changes, nothing else) |
-| Auth | Not built | SSO in front; every action attributed to a user |
+| Enquiry form | Built-in submission page | Website form posts the same fields |
+| Client and company data | Sample data behind the CRM interface | CRM (Dynamics, Salesforce) and Companies House or D&B |
+| Conflict check | Field in the sample data | The firm's conflicts system, checked before routing |
+| Language model | OpenRouter | Zero-retention providers only, or the provider directly |
+| Notifications | Rendered and logged | Email and Slack with signed action links |
+| Storage | SQLite | Postgres |
+| Access | Open | Single sign-on; configuration limited to administrators |
 
-## Instrumented from day one
+## What is measured from day one
 
-- **Per call:** latency, tokens, reported cost, model and provider, agreement.
-- **Per enquiry:** the routing trace and every human action (old value, new value, reason).
-- **`/metrics`:** reassignment rate overall and per predicted line, review rate and reasons, 7- and 30-day service-line mix, failure rate, p50/p95 latency.
-- **`make eval`:** the regression gate for any prompt, model or taxonomy change, versioned by `PROMPT_VERSION`.
+Every model call records its latency, token usage, cost, which model and provider answered, and whether the three runs agreed. Every enquiry keeps its routing trail and any human action on it, with the reason.
+
+A health page tracks:
+- model errors per service line, with reassignments for workload counted separately;
+- how often enquiries go to review, and why;
+- the mix of service lines over 7 and 30 days;
+- failures and response times.
+
+A test suite reruns the full pipeline over the labelled enquiries before any change to the model, prompt or configuration is trusted.
 
 ## Rollout
 
-1. **Shadow mode (2–4 weeks).** The system runs silently alongside the analyst and is compared weekly.
-   - *Exit criteria:* review recall and auto-route precision of at least 95%.
-   - *Also measure* whether run disagreement catches anything.
-2. **Assisted.** Team leads get the suggestion and confirm it with one click. The analyst works only the review queue.
-3. **Automatic for high-confidence enquiries:** 3/3 agreement, no flags, not an existing client, and a line with a low reassignment rate. The hard stops and the review queue stay permanently.
+1. **Shadow mode (two to four weeks).** The system runs silently alongside the analyst, and the two are compared weekly. It moves on once at least 95% of enquiries that need a person are caught and at least 95% of automatic routes are correct.
+2. **Assisted.** Leads receive the suggestion and confirm it with a click. The analyst handles only the review queue.
+3. **Automatic for clear-cut cases.** An enquiry routes without confirmation when the runs agree, nothing is flagged, it isn't from an existing client, and its service line has a low error rate. The safety checks and the review queue stay permanently.

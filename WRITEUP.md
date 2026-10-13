@@ -1,104 +1,107 @@
-# What breaks first, what to monitor, and the fallback
+# What breaks first, how we'd know, and what happens when the model is wrong
 
-> **Half-page answer.** The section [Detail and plan](#detail-and-plan) below has the supporting context: a failure-mode table, a monitoring plan with thresholds and owners, the fallback ladder, and the rollout.
+## Summary
 
-**What breaks first: confident misroutes.** All 50 synthetic enquiries route correctly, but I wrote both the rules and the tests, so that is an upper bound. When new work appears (ESG, "AI governance"), the model files it under the nearest line, all three runs agree, and nothing triggers review. The agreement check never fired on the test set. Taxonomy drift is the likeliest failure and the least visible one. Second, complexity is over-called (28 of 29 errors one level too high, mostly from treating any mention of a board as board-level). That misleads team leads about effort, though it rarely changes routing.
+**What breaks first.** A confident wrong answer. When an enquiry doesn't fit the firm's categories neatly, the model files it under the nearest service line, all three runs agree, and nothing sends it for review.
 
-**What to monitor** (on `/metrics` from day one):
-- **Model-error reassignment rate per predicted service line,** the main drift signal. Each reassignment records a reason, so workload moves aren't counted as model errors.
-- **A weekly spot-check of about 10% of auto-routed enquiries,** because a confident error stays invisible until a lead objects.
-- **Review rate and its reasons; the service-line mix against the baseline; the `out_of_scope` and `vague` rates.**
-- **Failure rate, p95 latency,** and the model and provider behind each call.
+The prototype routed all 50 test enquiries correctly, but those enquiries were written alongside the categories. They show the model following the firm's definitions, not coping with real-world variety. New kinds of work are the sharpest risk: they get forced into an existing line without warning.
 
-**Fallback when the model is wrong:**
-- **Before routing:** injection, CRM conflicts and failed classifications always go to a person. The model can only output taxonomy ids, so it cannot name a destination. If the API fails, the system retries, then tries a fallback model, then sends the enquiry to the review queue. Nothing is dropped.
-- **One enquiry:** one-click Accept and Reassign. Corrections are stored and exported as new evaluation data.
-- **A pattern:** fix the rule or definition on the Configuration page. The preview shows which existing enquiries would route differently, every change is revertible, and prompt changes are re-measured with `make eval` before they are trusted.
-- **Rollout:** shadow mode, then assisted, before anything routes on its own. A line whose reassignment rate rises goes back to assisted.
+The second weakness is complexity. The model tends to overrate it, usually because it reads any mention of a board as board-level involvement. That rarely changes who receives the enquiry, but it can mislead the team lead about the effort involved.
+
+**What I'd monitor:**
+- **Model errors for each service line.** Every reassignment records why, so a busy lead isn't mistaken for a model error.
+- **A weekly spot-check of automatically routed enquiries,** because a confident mistake stays invisible until someone looks.
+- How often enquiries go to review and why, shifts in the service-line mix, failures and response times.
+
+**When the model gets it wrong:**
+- **Before anything is sent.** Suspected manipulation, conflicts and failed classifications always go to a person. The model can't send anything to an unexpected destination. If it's unavailable, the system tries a backup model, then the review queue.
+- **For a single enquiry.** Leads accept or reassign with one click, and each correction becomes new test data.
+- **For a recurring mistake.** Definitions and rules can be changed on a configuration screen, which shows which past enquiries a change would affect before it goes live.
+- **During rollout.** The system runs silently first, then makes suggestions, then routes on its own. Any service line that starts slipping goes back to suggestions.
 
 ---
 
-## Detail and plan
+## Supporting detail
 
-### Context: what "wrong" costs here
+### Not every mistake costs the same
 
-At 40–60 enquiries a week, a misroute delays the client's first response by days (an enquiry sitting with the wrong lead) and quietly loses work. That matters more than any model metric. Three kinds of error are not symmetric, and the system is built around that:
+At 40 to 60 enquiries a week, a misrouted enquiry can sit with the wrong person for days before anyone notices, and a slow first response can lose the work. The system treats three kinds of error differently:
 
-- **Must never happen silently:** a missed **conflict of interest**, which is a regulatory and reputational breach, and **following injected instructions**. These are hard stops in code, independent of how confident the model is.
-- **Expensive but recoverable:** the **wrong service line**. The client waits, and the lead reassigns. This is what monitoring has to catch quickly.
-- **Cheap:** **complexity one level off**, or an **unnecessary review**. A human spends a minute. I deliberately tuned towards over-reviewing: review recall matters more than review rate.
+- **Must never happen quietly:** missing a conflict of interest, or acting on instructions hidden in an enquiry. These are blocked by fixed rules, whatever the model says.
+- **Costly but recoverable:** sending an enquiry to the wrong service line. Monitoring is mainly aimed at catching this quickly.
+- **Cheap:** a complexity rating one level out, or sending an enquiry for review when it didn't need it. A person spends a minute on it.
 
-### Failure modes, ranked
+The system is tuned to send more to review rather than less. Catching the cases that need a person matters more than keeping the review queue short.
 
-| # | Failure | Likelihood | Impact | How we'd see it | Mitigation now | Next step |
-|---|---|---|---|---|---|---|
-| 1 | **Taxonomy drift:** new kinds of work forced into an existing line | High | Medium | Model-error reassignments into one line from many; `out_of_scope` share rising; weekly spot-check | Leads reassign; definitions editable on the Config page with an impact preview | Add a "doesn't fit the taxonomy" output and count it on the Health page |
-| 2 | **Neighbouring-line confusion** (internal vs external audit, tech vs strategy) | Medium | Medium | Confusion matrix on exported feedback; pairs of lines reassigned back and forth | "Not this" notes in the taxonomy | A held-out set of confusable cases, measured on every prompt change |
-| 3 | **Multi-service enquiries** owned by one lead, the other line finds out late | Medium | Medium | `multi_service` flag rate; reassignments between primary and secondary lines | Secondary lines shown on every enquiry | Copy the secondary line's lead (a one-rule change) |
-| 4 | **Conflict or existing client missed** (name variants, subsidiaries, personal email) | Low–Medium | **High** | Partners reporting "this was our client"; CRM match rate | Domain + normalised-name match; conflicts are a hard stop | Fuzzy matching with match strength; group/subsidiary lookup; the real conflicts system as a gate |
-| 5 | **Urgency missed** (a regulator deadline stated as "low") | Medium | High for that client | Urgency-mismatch rate; review-queue age | Model infers urgency and flags mismatches; complex + high copies the practice head | Extract deadlines as dates; alert on a deadline within 5 working days |
-| 6 | **Complexity over-called** | High (measured) | Low | Complexity corrections in feedback | Shown with its rationale, editable | Model reports each rubric criterion with a quote; code decides the level |
-| 7 | **Provider outage or silent model change** | Medium | Medium | Failure rate; p95 latency; prompt/config/model hash on every run | Retry → fallback model → review queue | Pin model versions; weekly `make eval` canary; consider calling the provider directly |
-| 8 | **Prompt injection, or a new attack style** | Low | High | Injection flag rate; spot-check | Untrusted-input delimiting; flag from any run is a hard stop; model can't name destinations | Add a keyword check before the model runs, as a second detector |
-| 9 | **Poor form input** (one-liners, wrong size band) | High | Low | `vague` rate; size mismatches against CRM | Vague → review with questions to ask the client | Fix the form: required fields, examples, and a drafted clarifying email |
-| 10 | **Client data exposure** via a third-party API | Low | High | Contract and provider audit, not metrics | Nothing beyond the API terms (demo) | Zero-data-retention providers only; redact personal data; or a provider in the firm's own cloud account |
+### Risks, from most to least likely
+
+| Risk | Likelihood | Impact | Early warning | Current safeguard | Next step |
+|---|---|---|---|---|---|
+| New kinds of work forced into an existing category | High | Medium | Reassignments into one line from many directions; rising out-of-scope share | Leads reassign; definitions can be updated with an impact preview | Let the model say "doesn't fit", and track how often it does |
+| Confusion between neighbouring lines (internal vs external audit, technology vs strategy) | Medium | Medium | Enquiries passed back and forth between the same two lines | Each definition says how it differs from its neighbours | A dedicated test set of borderline cases, rechecked on every change |
+| Enquiries needing more than one practice | Medium | Medium | Rate of multi-service flags; reassignments between the primary and secondary lines | Secondary lines shown on every enquiry | Copy the secondary line's lead automatically |
+| A conflict or existing client missed (name variations, subsidiaries, personal email addresses) | Low to medium | High | Partners reporting a missed client; CRM match rate | Matching on email domain and company name; conflicts always go to a person | Fuzzy matching, group structure lookups, and the firm's conflicts system as a gate |
+| A deadline missed because the client marked the enquiry low priority | Medium | High for that client | Rate of urgency mismatches; age of items in review | The model reads urgency from the text and flags mismatches; urgent complex work copies the practice head | Extract deadlines as dates and alert when one is under five working days away |
+| Complexity overstated | High (measured) | Low | Complexity corrections in feedback | Shown with its reasoning, and editable | The model cites evidence for each criterion; the rating is calculated from that |
+| Provider outage, or a model changing without notice | Medium | Medium | Failure rate, response times, version recorded on every decision | Retry, then a backup model, then the review queue | Pin model versions; run the test suite weekly as an early warning |
+| Hidden instructions in an enquiry | Low | High | Rate of injection flags; spot-checks | Enquiry text treated as untrusted; any flag sends it to a person; the model cannot choose a destination | Add a simple pattern check that runs before the model |
+| Thin or inaccurate form input | High | Low | Vague-enquiry rate; size mismatches against the CRM | Vague enquiries go to review with suggested questions for the client | Improve the form itself, and draft the follow-up email automatically |
+| Client data leaving the firm's control | Low | High | Contract and provider review, not metrics | Not addressed in the prototype | Zero-retention providers only, personal details removed, or a provider inside the firm's own cloud |
 
 ### Monitoring plan
 
-| Signal | Source | Alert threshold | Owner | Cadence |
-|---|---|---|---|---|
-| Model-error reassignment rate, per line | Feedback (reason = wrong service line, or misclassified) | > 10% for any line over 2 weeks | Practice ops | Weekly |
-| Auto-route precision (spot-check) | Random 10% of auto-routed enquiries, reviewed by the analyst | < 95% | Analyst → practice ops | Weekly |
-| Review-queue rate | Pipeline runs | Outside 10–30% | Practice ops | Weekly |
-| Review-queue age | Enquiries in review | Any item > 1 working day | Analyst | Daily |
-| `out_of_scope` + `vague` share | Classifications | Doubles against the 4-week baseline | Practice ops | Weekly |
-| Service-line mix | Classifications | Any line ±50% against baseline | Practice ops | Monthly |
-| Classification failure rate | Pipeline runs | > 2% in a day | Engineering | Daily alert |
-| p95 latency | Pipeline runs | > 30s | Engineering | Daily alert |
-| Eval regression | `make eval` on synthetic + feedback set | Review recall < 100% on hard stops; any metric down > 5 pts | Engineering | On every change, plus weekly |
-| Cost per enquiry | Reported by OpenRouter | > 2× baseline | Engineering | Monthly |
-
-### Fallback ladder (when the model is wrong)
-
-| Level | Trigger | What happens | Who acts |
+| What to watch | Alert when | Owner | How often |
 |---|---|---|---|
-| 0. Prevent | Injection, conflict, classification failure | Hard stop to review, regardless of the model | Automatic |
-| 1. Catch | Runs disagree, vague, out of scope | Review queue, with the reason shown on the card | Analyst |
-| 2. Correct one | A lead or reviewer disagrees | One-click Reassign (with a reason) or Mark misclassified; logged as feedback | Team lead / analyst |
-| 3. Correct the pattern | Repeated errors in a line, found by metrics or the spot-check | Edit the definition, rule or lead on the Config page; check the impact preview; save; `make eval` for prompt changes | Practice ops |
-| 4. Degrade | A line's error rate stays over threshold, or the provider is down | That line (or everything) goes back to assisted mode; the analyst triages from the queue | Practice ops / engineering |
-| 5. Learn | Weekly | Export feedback → add to the eval set → measure before the next prompt or model change | Engineering |
+| Model errors per service line (reassigned because the line was wrong, or corrected) | Above 10% for any line over two weeks | Practice operations | Weekly |
+| Accuracy of automatic routing, from a 10% spot-check | Below 95% | Analyst, reported to practice operations | Weekly |
+| Share of enquiries sent to review | Outside 10% to 30% | Practice operations | Weekly |
+| Time items wait in the review queue | Anything older than one working day | Analyst | Daily |
+| Out-of-scope and vague enquiries | Double the four-week average | Practice operations | Weekly |
+| Mix of service lines | Any line up or down by half against its usual level | Practice operations | Monthly |
+| Classification failures | Above 2% in a day | Engineering | Daily alert |
+| Response time (95th percentile) | Above 30 seconds | Engineering | Daily alert |
+| Results on the test suite | Any safety case missed, or any measure down more than five points | Engineering | On every change, and weekly |
+| Cost per enquiry | Double the usual level | Engineering | Monthly |
+
+### Escalation, from prevention to learning
+
+1. **Prevent.** Suspected manipulation, conflicts and failed classifications go straight to a person.
+2. **Catch.** Disagreement between runs, vague requests and out-of-scope enquiries go to the review queue, each with the reason shown.
+3. **Correct a single enquiry.** A lead or reviewer reassigns it or corrects the classification with one click, and gives a reason.
+4. **Correct a pattern.** When the same mistake keeps appearing, practice operations updates the relevant definition, rule or assignment. They check which past enquiries the change would affect before saving, and rerun the test suite after any change to the model's instructions.
+5. **Step back.** If a service line keeps making mistakes, or the provider is down, that line returns to suggestions only and the analyst triages it from the queue.
+6. **Learn.** Each week, corrections are added to the test set, so the next change to the model or its instructions is measured against real cases.
 
 ### Rollout
 
-| Phase | Duration | What changes | Exit criteria |
+| Phase | Length | What changes | Ready to move on when |
 |---|---|---|---|
-| **Shadow** | 2–4 weeks | System runs on every enquiry; no notifications; the analyst keeps doing it by hand; decisions compared weekly | Review recall ≥ 95% against the analyst's judgement; auto-route precision ≥ 95%; zero missed conflicts or injections |
-| **Assisted** | 4–8 weeks | Leads get the suggestion and confirm with one click; the analyst works only the review queue | Model-error reassignment rate < 10% per line; spot-check precision ≥ 95% |
-| **Automatic for high-confidence enquiries** | Ongoing | 3/3 agreement, no flags, not an existing client, and the line is below its error threshold → routed with no confirmation | Stays only while the per-line thresholds hold; any breach sends that line back to assisted |
+| Shadow | Two to four weeks | The system runs on every enquiry without notifying anyone; the analyst carries on as normal; the two are compared weekly | At least 95% of enquiries needing a person are caught, at least 95% of automatic routes are correct, and no conflict or manipulation attempt is missed |
+| Assisted | Four to eight weeks | Team leads receive the suggestion and confirm it with a click; the analyst handles only the review queue | Model errors below 10% for every service line, and spot-checks at or above 95% |
+| Automatic for clear-cut enquiries | Ongoing | Enquiries where the runs agree, nothing is flagged and the line is performing well are routed without confirmation | Continues only while each line stays within its thresholds; a breach returns that line to assisted |
 
-**Expected effect:** the analyst's 8 hours a week becomes roughly 1–2. That covers the review queue (about 17% of enquiries in the synthetic set) plus the weekly spot-check, and it would be measured in shadow mode rather than assumed.
+The expected result is that the analyst's eight hours a week drop to one or two: the review queue (about one enquiry in six in testing) plus the weekly spot-check. Shadow mode will confirm the real figure.
 
-### First 90 days of engineering
+### The first 90 days
 
-1. **Days 0–30:**
-   - Put the real CRM and conflicts system behind the existing interfaces, and SSO in front of the app.
-   - Email and Slack notifications with signed action links.
-   - Start shadow mode.
-   - Build a held-out test set labelled by two people.
-2. **Days 30–60:**
-   - Evidence-based complexity scoring.
-   - The audit-independence rule (an audit client asking for prohibited non-audit work becomes a hard stop).
-   - A deadline extractor.
-   - Assisted mode.
-3. **Days 60–90:**
-   - Turn on automatic routing for qualifying lines.
-   - Prompt caching.
-   - Evaluate an embedding-based first-pass classifier on the feedback data, with the model kept for the hard cases.
+- **First month.**
+  - Connect the real CRM and conflicts system, and put single sign-on in front of the application.
+  - Send notifications by email and Slack.
+  - Start shadow mode.
+  - Build a fresh test set labelled independently by two people.
+- **Second month.**
+  - Make complexity ratings evidence-based.
+  - Add a rule that sends audit clients asking for services the firm can't also provide to them straight to a person.
+  - Extract deadlines as dates.
+  - Move to assisted mode.
+- **Third month.**
+  - Turn on automatic routing for the service lines that have earned it.
+  - Reduce cost by caching the model's standing instructions.
+  - Test whether a cheaper first-pass classifier, trained on the accumulated corrections, can handle the easy cases.
 
-### Assumptions behind this plan
+### Assumptions
 
-- The analyst's 8 hours a week is mostly reading and routing, not client contact.
-- Team leads will use one-click feedback if it's in the notification they already receive.
-- A conflicts system exists and can be queried before routing.
-- About 10 enquiries a day stays the order of magnitude, so a single service with an in-request pipeline is enough.
+- Most of the analyst's eight hours goes on reading and routing, not on talking to clients.
+- Team leads will give feedback if it takes one click in the message they already receive.
+- The firm has a conflicts system that can be checked before an enquiry is routed.
+- Volume stays at around ten enquiries a day, so a single application processing enquiries as they arrive is enough.
