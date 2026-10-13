@@ -29,3 +29,24 @@ Short entries: decision, alternatives considered, why.
   - **Injection outranks archive:** an attacker could otherwise make a real enquiry disappear by getting it labelled spam.
   - **Not hard stops:** vague, out-of-scope and other review triggers from existing clients still go to the relationship partner, who is best placed to call the client back.
 - **Dataset note:** both conflict cases are prospects. The rule is covered by unit tests rather than dataset records.
+
+## D6. Structured output via `response_format: json_schema` (strict), not a forced tool call
+- **Decision:** Every call sends a strict JSON schema named `record_triage` as `response_format`. No tools are sent.
+- **Alternatives:** A single function tool with `tool_choice` forced to it, as the brief prefers.
+- **Why:** I probed OpenRouter with `provider.require_parameters: true` on 2026-10-13. The current Anthropic models (`claude-sonnet-5.5`, `claude-haiku-5.5`) have no provider that accepts a forced `tool_choice`, or even `"required"`, so the request fails with 404 "No endpoints found". `json_schema` was accepted by every candidate model. The brief allows this as long as one method is used consistently. The schema's enums are generated from `taxonomy.yaml`. Output is validated again with Pydantic, which also checks the ids against the taxonomy.
+
+## D7. Temperature is sent only where the model supports it
+- **Decision:** At startup, the client reads `supported_parameters` from OpenRouter's `/models` endpoint. Models that support temperature get 0 / 0.7 / 0.7. Models that don't get three calls at the provider's default sampling. The temperature actually sent (or `null`) is stored for every run.
+- **Alternatives:** Always send temperature, which makes Claude and GPT-5.6 requests fail under `require_parameters`. Or drop `require_parameters`, which risks a provider silently ignoring the schema.
+- **Why:** The agreement check still measures sampling variance. Run 0 stays the primary result and the other two only vote. The trade-off: for no-temperature models, run 0 is not deterministic. This is documented as a known limitation.
+
+## D8. Models
+- **Decision:** `TRIAGE_MODEL=anthropic/claude-sonnet-5.5` ($2 / $10 per M tokens). `EVAL_MODELS=anthropic/claude-haiku-5.5` (cheap tier, $0.10 / $0.50) and `google/gemini-3.8-flash` (different vendor, $0.75 / $3.75).
+- **Why:** Sonnet is a strong mid-tier model. Haiku isolates the effect of price within one vendor. Gemini tests a second vendor and is also the only one of the three that accepts temperature, so it runs the brief's 0 / 0.7 design exactly. All three accept strict `json_schema` under `require_parameters` (verified 2026-10-13).
+- **Fallback:** The app pipeline passes `models: [primary, google/gemini-3.8-flash]` so a provider outage falls through. The model that actually answered is stored and shown. Evaluation runs never use the fallback, so each eval measures exactly one model.
+
+## D9. All three runs execute concurrently
+- **Why:** Running them in parallel cuts per-enquiry latency from about 15s to about 5–9s. The calls are independent, so the agreement check is unaffected.
+
+## D10. A `possible_injection` flag from any of the three runs triggers the hard stop
+- **Why:** Other flags come from the primary run only. Injection is the one where a single detection is enough, because a false positive costs a human glance and a false negative can misroute.
