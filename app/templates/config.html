@@ -67,8 +67,14 @@
           <li class="{{ '' if rt.hard_stops.on_conflict_flag else 'off' }}">the CRM shows a conflict {{ '' if rt.hard_stops.on_conflict_flag else '(off)' }}</li>
           <li class="{{ '' if rt.hard_stops.on_classification_failure else 'off' }}">classification fails after a retry {{ '' if rt.hard_stops.on_classification_failure else '(off)' }}</li>
         </ul>
+      {% elif r.id == 'manual_mode' %}
+        {% set fbk = rt.fallback or {} %}
+        <strong>Fallback mode → review queue.</strong>
+        {% if fbk.pause_automatic_routing %}<span class="pill flag flag-conflict">Automatic routing is PAUSED</span> every enquiry goes to a person.
+        {% elif fbk.degraded_service_lines %}Enquiries for {% for l in fbk.degraded_service_lines %}{{ domain.line_name(l) }}{{ ', ' if not loop.last }}{% endfor %} go to a person while that line is reviewed.
+        {% else %}Off: no service line is in fallback mode, and automatic routing is on.{% endif %}
       {% elif r.id == 'archive_not_an_enquiry' %}
-        <strong>Not an enquiry → archive.</strong> Spam, job applications and vendor pitches. No notification.
+        <strong>Not an enquiry → archive.</strong> Spam, job applications and vendor pitches. No notification.{% if (rt.fallback or {}).archive_requires_unanimous_runs %} Only when all three runs agree; otherwise it goes to review, so a real enquiry is never silently archived.{% endif %}
       {% elif r.id == 'existing_client' %}
         <strong>Existing client → relationship partner</strong>, with the service-line lead copied. Applies even if softer review triggers fired; the partner knows the client.
       {% elif r.id == 'review_flags' %}
@@ -161,6 +167,29 @@
       <label class="form-row"><span>Duplicate window (days)</span><input name="dedupe_window_days" type="number" min="0" max="90" value="{{ rt.dedupe_window_days }}"></label>
     </section>
   </div>
+  {% set fbk = rt.fallback or {} %}
+  <section class="card">
+    <h2 class="card-title">Fallback controls (when something is wrong)</h2>
+    <div class="detail-grid">
+      <div>
+        <label class="check"><input type="checkbox" name="pause_automatic_routing" {{ 'checked' if fbk.pause_automatic_routing }}> <strong>Pause automatic routing</strong>: every enquiry goes to the review queue</label>
+        <p class="small muted">Use during a provider incident, a bad prompt change, or while investigating a pattern of errors.</p>
+        <p class="small">Put individual service lines in fallback mode (their enquiries go to a person):</p>
+        {% for line in rt.routing_table %}
+        <label class="check"><input type="checkbox" name="degraded__{{ line }}" {{ 'checked' if line in (fbk.degraded_service_lines or []) }}> {{ domain.line_name(line) }}</label>
+        {% endfor %}
+      </div>
+      <div>
+        <label class="check"><input type="checkbox" name="archive_requires_unanimous_runs" {{ 'checked' if fbk.archive_requires_unanimous_runs }}> Archive only when all three runs agree it isn't an enquiry</label>
+        <p class="small">Escalate a routed enquiry to review if nobody accepts or reassigns it within (hours):</p>
+        <div class="grid-3">
+          {% for u in ['high', 'normal', 'low'] %}
+          <label class="form-row"><span>{{ u | capitalize }} urgency</span><input name="ack__{{ u }}" type="number" min="1" step="1" value="{{ (fbk.acknowledgement_hours or {}).get(u, '') }}"></label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
   <div class="sticky-actions"><button class="btn btn-primary">Preview changes</button><span id="ind-routing" class="htmx-indicator"><span class="spinner"></span> Replaying routing for existing enquiries…</span></div>
 </form>
 <div id="preview-routing"></div>

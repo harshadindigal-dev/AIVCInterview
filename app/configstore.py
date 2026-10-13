@@ -167,6 +167,14 @@ def validate(d: Domain) -> list[str]:
     bad = [f for f in hs.get("flags") or [] if f not in FLAGS]
     if bad:
         errors.append(f"routing: hard_stops.flags has unknown flags {bad}")
+    fb = rt.get("fallback") or {}
+    bad = [s for s in fb.get("degraded_service_lines") or [] if s not in line_ids]
+    if bad:
+        errors.append(f"routing: fallback.degraded_service_lines has unknown service lines {bad}")
+    for k, v in (fb.get("acknowledgement_hours") or {}).items():
+        if k not in URGENCIES or not isinstance(v, (int, float)) or v <= 0:
+            errors.append(f"routing: fallback.acknowledgement_hours.{k} must be a positive number of hours "
+                          f"for one of {URGENCIES}")
     dw = rt.get("dedupe_window_days")
     if not isinstance(dw, int) or dw < 0:
         errors.append("routing: dedupe_window_days must be a whole number of days")
@@ -346,6 +354,15 @@ def routing_from_form(form: dict[str, Any]) -> str:
         hs["on_classification_failure"] = bool(form.get("hard_stop_failure"))
         if form.get("dedupe_window_days") not in (None, ""):
             d["dedupe_window_days"] = int(form["dedupe_window_days"])
+        if "fallback" in d:
+            f = d["fallback"]
+            f["pause_automatic_routing"] = bool(form.get("pause_automatic_routing"))
+            f["archive_requires_unanimous_runs"] = bool(form.get("archive_requires_unanimous_runs"))
+            f["degraded_service_lines"] = [ln for ln in d["routing_table"] if form.get(f"degraded__{ln}")]
+            for u in ("high", "normal", "low"):
+                v = form.get(f"ack__{u}")
+                if v not in (None, ""):
+                    f["acknowledgement_hours"][u] = float(v) if "." in str(v) else int(v)
     return _edit_yaml("routing", mutate)
 
 

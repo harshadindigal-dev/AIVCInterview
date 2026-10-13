@@ -26,8 +26,8 @@ def test_default_routes_to_service_line_lead(domain):
     assert (d.destination_type, d.destination_key) == ("lead", "tax")
     assert d.recipient["name"] == "Daniel Whitfield" and d.cc == []
     assert d.deciding_rule == "default"
-    assert [s.rule for s in d.trace] == ["hard_stop_review", "archive_not_an_enquiry", "existing_client",
-                                         "review_flags", "complex_high_urgency", "default"]
+    assert [s.rule for s in d.trace] == ["hard_stop_review", "manual_mode", "archive_not_an_enquiry",
+                                         "existing_client", "review_flags", "complex_high_urgency", "default"]
     assert [s.deciding for s in d.trace].count(True) == 1
 
 
@@ -146,3 +146,43 @@ def test_routing_reads_yaml_not_code(domain):
     routing["team_leads"]["tax"]["name"] = "Someone New"
     d = go(replace(domain, routing=routing))
     assert d.recipient["name"] == "Someone New"
+
+
+# --- fallbacks ---------------------------------------------------------------
+
+def _with_fallback(domain, **fb):
+    import copy
+    from dataclasses import replace
+    routing = copy.deepcopy(domain.routing)
+    routing["fallback"].update(fb)
+    return replace(domain, routing=routing)
+
+
+def test_spam_with_disagreement_is_reviewed_not_archived(domain):
+    c = facts(primary_service_line="not_an_enquiry", flags=["spam"], agreement_service_line=2,
+              agreement_text="2/3 agreed: not_an_enquiry vs tax")
+    d = go(domain, c)
+    assert d.destination_type == "review"
+    archive_step = next(s for s in d.trace if s.rule == "archive_not_an_enquiry")
+    assert not archive_step.fired and "not archived without agreement" in archive_step.detail
+
+
+def test_unanimous_spam_is_still_archived(domain):
+    assert go(domain, facts(primary_service_line="not_an_enquiry", flags=["spam"])).destination_type == "archive"
+
+
+def test_pause_sends_everything_to_review(domain):
+    d = go(_with_fallback(domain, pause_automatic_routing=True), facts(), enrichment=CLIENT)
+    assert d.destination_type == "review" and d.deciding_rule == "manual_mode"
+    assert "paused" in d.review_reasons[0]
+
+
+def test_degraded_line_goes_to_review_others_unaffected(domain):
+    dom = _with_fallback(domain, degraded_service_lines=["tax"])
+    assert go(dom, facts(primary_service_line="tax")).destination_type == "review"
+    assert go(dom, facts(primary_service_line="audit")).destination_type == "lead"
+
+
+def test_hard_stop_still_wins_over_fallback_mode(domain):
+    d = go(_with_fallback(domain, pause_automatic_routing=True), facts(flags=["possible_injection"]))
+    assert d.deciding_rule == "hard_stop_review"

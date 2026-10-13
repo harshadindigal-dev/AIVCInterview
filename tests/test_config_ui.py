@@ -39,6 +39,7 @@ def routing_form(domain, **overrides):
     f = {"name": "routing", "mode": "form", "min_service_line_agreement": "3",
          "hard_stop_injection": "on", "hard_stop_conflict": "on", "hard_stop_failure": "on",
          "review_on_out_of_scope": "on", "dedupe_window_days": "7",
+         "archive_requires_unanimous_runs": "on", "ack__high": "4", "ack__normal": "24", "ack__low": "48",
          **{f"exempt__{x}": "on" for x in rt["review"]["exempt_flags"]}}
     for key, p in rt["team_leads"].items():
         for k in ("name", "email", "slack"):
@@ -142,3 +143,23 @@ def test_prompt_tab_shows_exact_prompt(cfg_client):
     for sl in get_domain().taxonomy["service_lines"]:
         assert sl["id"] in page
     assert "Routing rules, in the order they run" in c.get("/config").text
+
+
+def test_pause_switch_preview_and_apply(cfg_client):
+    c, cfg = cfg_client
+    eid = submit_and_wait(c)
+    pv = c.post("/config/preview", data=routing_form(get_domain(), pause_automatic_routing="on"), headers=HX).text
+    assert "1 of 1 existing enquiries would route differently" in pv and "Review queue" in pv
+    c.post("/config/apply", data={"name": "routing",
+                                  "text": configstore.routing_from_form(routing_form(get_domain(), pause_automatic_routing="on"))},
+           headers=HX)
+    eid2 = submit_and_wait(c, {**FORM, "description": "Another VAT question entirely, please call."})
+    assert "Automatic routing is paused" in c.get(f"/enquiries/{eid2}").text
+    assert "Automatic routing is PAUSED" in c.get("/config").text
+
+
+def test_fallback_validation(cfg_client):
+    c, _ = cfg_client
+    bad = configstore.read_text("routing").replace("degraded_service_lines: []", "degraded_service_lines: [ceo]")
+    r = c.post("/config/preview", data={"name": "routing", "text": bad}, headers=HX)
+    assert "unknown service lines" in html.unescape(r.text)

@@ -162,16 +162,18 @@ A pure function: the same inputs always give the same decision. Rules run in the
 | # | Rule | Destination |
 |---|---|---|
 | 1 | **Hard stop:** possible injection (from *any* of the 3 runs), CRM conflict, or classification failure | Review queue |
-| 2 | **Not an enquiry:** spam, job applications, vendor pitches | Archive, no notification |
-| 3 | **Existing client** in the CRM | Relationship partner, with the service-line lead copied |
-| 4 | **Review triggers:** fewer than 3/3 runs agree on the service line, any non-exempt flag, out of scope | Review queue |
-| 5 | **Complex and high urgency** (stated *or* inferred) | Service-line lead, with the practice head copied |
-| 6 | **Otherwise** | Service-line lead |
+| 2 | **Fallback mode:** automatic routing paused, or the enquiry's service line is in fallback mode | Review queue |
+| 3 | **Not an enquiry:** spam, job applications, vendor pitches, **only when all 3 runs agree** | Archive, no notification (otherwise review) |
+| 4 | **Existing client** in the CRM | Relationship partner, with the service-line lead copied |
+| 5 | **Review triggers:** fewer than 3/3 runs agree on the service line, any non-exempt flag, out of scope | Review queue |
+| 6 | **Complex and high urgency** (stated *or* inferred) | Service-line lead, with the practice head copied |
+| 7 | **Otherwise** | Service-line lead |
 
 Every rule that was checked is written to a **routing trace** with its result. The model can only output taxonomy ids, so it can't name a person or a destination: "route this to the CEO" has no path.
 
 ### 5. Notify and audit ([`notify.py`](app/pipeline/notify.py), [`run.py`](app/pipeline/run.py))
 - **Notify:** a rendered email or Slack message, with the summary, service line, complexity and **Accept / Reassign** links, is written to the notifications log. Nothing real is sent.
+- **Acknowledgement deadline** ([`escalation.py`](app/escalation.py)): a routed enquiry that nobody accepts or reassigns within 4 / 24 / 48 hours (high / normal / low urgency) is escalated back to the review queue, with the reason recorded. A misroute nobody notices still resurfaces.
 - **Audit:** one row per pipeline run, holding:
   - the enrichment output;
   - the prompt version, **prompt hash** and **config hash**;
@@ -286,7 +288,7 @@ Why OpenRouter, and the trade-offs (data retention, the extra hop, calling a pro
 |---|---|
 | `make up` | Build and start on http://localhost:8000; seeds on first start |
 | `make down` | Stop, keeping the database |
-| `make test` | Run the 84 tests inside the image. One makes a live call (about $0.05) and is skipped without a key |
+| `make test` | Run the 93 tests inside the image. One makes a live call (about $0.05) and is skipped without a key |
 | `make eval` | Evaluate `TRIAGE_MODEL` + `EVAL_MODELS` and write `eval_results/` (about $3) |
 | `make reset-db` | Delete the database volume; the next `make up` re-seeds (about $2) |
 | `make logs` | Follow the structured JSON logs |
@@ -355,7 +357,7 @@ config/                taxonomy.yaml · rubric.yaml · routing.yaml · crm_clien
 data/                  synthetic_enquiries.jsonl (labelled dataset)
 eval_results/          Per-model results JSON + failure_notes.md
 scripts/               run_eval.py · triage.py · export_feedback.py
-tests/                 84 tests
+tests/                 93 tests
 docs/screenshots/      README screenshots
 ```
 
@@ -378,14 +380,14 @@ docs/screenshots/      README screenshots
 
 ## Tests
 
-84 tests, all passing on Python 3.12 in the image and 3.13 locally. Unit tests never hit the network; LLM calls go through a scripted fake or a mocked HTTP layer.
+93 tests, all passing on Python 3.12 in the image and 3.13 locally. Unit tests never hit the network; LLM calls go through a scripted fake or a mocked HTTP layer.
 
 | Area | What's covered |
 |---|---|
-| Routing | One test per rule, rule precedence, each hard stop, each review trigger, exempt flags, routing read from YAML |
+| Routing | One test per rule, rule precedence, each hard stop, each review trigger, exempt flags, routing read from YAML, pause and per-line fallback mode, spam with split runs goes to review rather than the archive |
 | Classification | Three runs and the temperature schedule, agreement counting, validation retry then `classification_failed`, API retry with backoff, an injection flag from any run |
 | OpenRouter client (HTTP mocked) | Request shape: `require_parameters`, strict `json_schema`, usage accounting, attribution headers, fallback `models`. Status codes classified as retryable or not; a 429 is retried |
-| Pipeline | Audit row contents, original text kept exactly, dedupe skips triage, failure goes to review, archive sends no notification, feedback rows |
+| Pipeline | Audit row contents, original text kept exactly, dedupe skips triage, failure goes to review, archive sends no notification, feedback rows, unacknowledged enquiries escalate at the deadline (accepted ones never do) |
 | Prompt | Every taxonomy id and rubric criterion appears in the prompt; the delimiter can't be closed early |
 | Web app | Submit → progress → detail flow, validation errors, review-queue actions, **reassign changes the Health metrics**, a reassignment for capacity is not counted as a model error, empty states, inbox sorting, filtering and search |
 | Configuration | Validation blocks bad edits; the preview shows the routing impact; save applies **live without a restart** and preserves comments; rename a lead then revert; a taxonomy edit changes the prompt sent and the stored prompt hash; stale-eval warning |

@@ -13,7 +13,7 @@ from app.config import Domain
 
 
 # Rules the router knows how to evaluate. routing.yaml chooses their order.
-KNOWN_RULES = {"hard_stop_review", "archive_not_an_enquiry", "existing_client", "review_flags",
+KNOWN_RULES = {"hard_stop_review", "manual_mode", "archive_not_an_enquiry", "existing_client", "review_flags",
                "complex_high_urgency", "default"}
 
 
@@ -172,8 +172,26 @@ def route(*, classification: ClassificationFacts, enrichment: dict[str, Any], st
                               recipient={"key": "review", **q}, cc=[], review_reasons=reasons)
             skip(rule_id, "No injection flag, no conflict, classification succeeded")
 
+        elif rule_id == "manual_mode":
+            fb = cfg.get("fallback") or {}
+            q = cfg["review_queue"]
+            if fb.get("pause_automatic_routing"):
+                reason = "Automatic routing is paused: every enquiry is triaged by a person"
+                return decide(rule_id, reason, destination_type="review", destination_key="review",
+                              recipient={"key": "review", **q}, cc=[], review_reasons=[reason])
+            if line in (fb.get("degraded_service_lines") or []):
+                reason = f"{domain.line_name(line)} is in fallback mode: routed by a person until it is reviewed"
+                return decide(rule_id, reason, destination_type="review", destination_key="review",
+                              recipient={"key": "review", **q}, cc=[], review_reasons=[reason])
+            skip(rule_id, "Automatic routing on; this service line is not in fallback mode")
+
         elif rule_id == "archive_not_an_enquiry":
-            if line == "not_an_enquiry":
+            unanimous = c.agreement_service_line >= c.n_runs
+            if line == "not_an_enquiry" and not unanimous and (cfg.get("fallback") or {}).get(
+                    "archive_requires_unanimous_runs", True):
+                skip(rule_id, f"Looks like not an enquiry, but the runs disagreed ({c.agreement_text}); "
+                              "not archived without agreement")
+            elif line == "not_an_enquiry":
                 return decide(rule_id, "Classified as not an enquiry (spam, job application or vendor pitch)",
                               destination_type="archive", destination_key="archive", recipient=None, cc=[],
                               review_reasons=[])

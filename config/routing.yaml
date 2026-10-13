@@ -72,6 +72,8 @@ routing_table:
 rules:
   - id: hard_stop_review
     description: Possible injection, conflict flag or classification failure -> review queue, before any other rule
+  - id: manual_mode
+    description: Automatic routing paused, or the service line is in fallback mode -> review queue
   - id: archive_not_an_enquiry
     description: not_an_enquiry -> archive, no notification
   - id: existing_client
@@ -82,6 +84,22 @@ rules:
     description: complex + high urgency -> service-line lead, practice head copied
   - id: default
     description: Otherwise -> service-line lead
+
+# Fallback controls: switches for when something is wrong. They send enquiries
+# to a person instead of routing automatically, with no code change.
+fallback:
+  # Everything goes to the review queue (e.g. during a provider incident or a bad prompt change).
+  pause_automatic_routing: false
+  # Service lines whose enquiries go to review while a problem with them is investigated.
+  degraded_service_lines: []
+  # Only archive spam / job applications / pitches when all three runs agree; otherwise review.
+  archive_requires_unanimous_runs: true
+  # A routed enquiry nobody has accepted or reassigned within this many hours is
+  # escalated to the review queue. Keyed by urgency (the higher of stated and inferred).
+  acknowledgement_hours:
+    high: 4
+    normal: 24
+    low: 48
 
 # Hard stops: checked first, so nothing (including the existing-client rule)
 # can route these automatically.

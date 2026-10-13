@@ -79,6 +79,19 @@ def build_deps(settings, domain) -> PipelineDeps:
                         base_url=settings.openrouter_app_url)
 
 
+def _escalation_loop(engine, interval: int) -> None:
+    """Pull routed-but-unacknowledged enquiries back into the review queue."""
+    import time
+    from app.escalation import escalate_unacknowledged
+    while True:
+        try:
+            with Session(engine, expire_on_commit=False) as s:
+                escalate_unacknowledged(s, get_domain(), get_settings().openrouter_app_url)
+        except Exception:
+            log.exception("escalation check failed")
+        time.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
@@ -96,6 +109,9 @@ async def lifespan(app: FastAPI):
         seed_mod.start_background_seed(engine, app.state.deps)
     else:
         seed_mod.status.update(state="done")
+    if settings.escalation_check_seconds > 0:
+        threading.Thread(target=_escalation_loop, args=(engine, settings.escalation_check_seconds),
+                         daemon=True, name="escalation").start()
     log.info(json.dumps({"event": "startup", "model": settings.triage_model, "prompt_version": PROMPT_VERSION}))
     yield
 
@@ -150,7 +166,7 @@ CASE_LABELS = {"multi_service": "Multi-service", "vague": "Vague", "urgency_mism
                "vendor_pitch": "Vendor pitch", "out_of_scope": "Out of scope", "prompt_injection": "Prompt injection",
                "neighbour_risk_vs_audit": "Confusable: risk vs audit",
                "neighbour_tech_vs_strategy": "Confusable: tech vs strategy", "duplicate": "Duplicate submission"}
-RULE_LABELS = {"hard_stop_review": "Hard stop", "archive_not_an_enquiry": "Not an enquiry",
+RULE_LABELS = {"hard_stop_review": "Hard stop", "manual_mode": "Fallback mode", "archive_not_an_enquiry": "Not an enquiry",
                "existing_client": "Existing client", "review_flags": "Review triggers",
                "complex_high_urgency": "Complex + high urgency", "default": "Service-line lead", "dedupe": "Duplicate"}
 

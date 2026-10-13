@@ -52,19 +52,22 @@ Each enquiry is classified three times. Models are poor judges of their own conf
 **Routing.** Routing is kept away from the model. These rules apply in order, and the first one that matches decides:
 
 1. Possible prompt injection, a conflict of interest, or a failed classification always goes to a person.
-2. Spam, job applications and sales pitches are archived.
-3. Existing clients go to their relationship partner, with the service-line lead copied.
-4. Vague or out-of-scope enquiries, and those where the runs disagreed, go to the review queue.
-5. Complex, urgent work goes to the service-line lead, with the practice head copied.
-6. Everything else goes to the service-line lead.
+2. If automatic routing is paused, or the enquiry's service line is in fallback mode, it goes to a person.
+3. Spam, job applications and sales pitches are archived, but only if all three runs agree. Otherwise they go to review, so a genuine enquiry can't vanish.
+4. Existing clients go to their relationship partner, with the service-line lead copied.
+5. Vague or out-of-scope enquiries, and those where the runs disagreed, go to the review queue.
+6. Complex, urgent work goes to the service-line lead, with the practice head copied.
+7. Everything else goes to the service-line lead.
 
 The model can only choose from the firm's service lines, so it cannot name a person or invent a destination. Every rule checked, and the one that decided, is recorded and shown alongside the enquiry.
 
-**Notification and audit.** The chosen lead receives the summary, with one-click links to accept the enquiry or pass it on. Each run is stored in full: the submission, the enrichment, all three model responses, the routing decision, timings, tokens and cost. The pipeline is a single function. At about ten enquiries a day it runs as each one arrives, and it could move onto a job queue later without changes.
+**Notification and audit.** The chosen lead receives the summary, with one-click links to accept the enquiry or pass it on. If they do neither within a deadline (4 hours for urgent work, 24 for normal), the enquiry returns to the review queue, so a misroute nobody notices still resurfaces. Each run is stored in full: the submission, the enrichment, all three model responses, the routing decision, timings, tokens and cost. The pipeline is a single function. At about ten enquiries a day it runs as each one arrives, and it could move onto a job queue later without changes.
 
 ## Keeping the business logic in the firm's hands
 
 The service-line definitions, the rubric, the team leads and the routing rules live in configuration, not code. Practice operations can change them on a configuration screen.
+
+The same screen holds the fallback switches. Automatic routing can be paused, or a single service line put in fallback mode, so its enquiries go to a person while a problem is investigated.
 
 Each change is validated first. The system then replays every past enquiry under the proposed rules and lists any that would now be routed differently. Saved changes take effect immediately, are logged with a note, and can be reverted. Every decision records which version of the prompt and configuration produced it.
 

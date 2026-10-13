@@ -84,3 +84,30 @@ def test_reassign_writes_feedback(domain):
     fb = s.exec(select(Feedback)).one()
     assert fb.action == "reassign" and fb.reason_category == "wrong_service_line" and fb.old_value["destination_key"] == "tax"
     assert fb.new_value["destination_key"] == "deals" and e.status == "reassigned"
+
+
+def test_unacknowledged_enquiry_is_escalated(domain):
+    from datetime import timedelta
+    from app.escalation import escalate_unacknowledged
+    from app.models import utcnow
+    s, deps = setup(domain, FakeLLMClient(default=triage_payload(inferred_urgency="high")))
+    e = run_pipeline(s, EnquiryIn(**FORM), deps)
+    assert e.status == "auto_routed"
+    assert escalate_unacknowledged(s, domain, "http://x", now=utcnow() + timedelta(hours=3)) == []
+    assert escalate_unacknowledged(s, domain, "http://x", now=utcnow() + timedelta(hours=5)) == [e.id]
+    s.refresh(e)
+    assert e.status == "in_review" and "Not acknowledged by Daniel Whitfield within 4 hours" in e.review_reasons[0]
+    fb = s.exec(select(Feedback).where(Feedback.action == "escalated")).one()
+    assert fb.source == "system"
+    assert s.exec(select(Notification).where(Notification.subject.startswith("Escalated"))).one()
+
+
+def test_accepted_enquiry_is_never_escalated(domain):
+    from datetime import timedelta
+    from app.escalation import escalate_unacknowledged
+    from app.feedback import accept
+    from app.models import utcnow
+    s, deps = setup(domain, FakeLLMClient())
+    e = run_pipeline(s, EnquiryIn(**FORM), deps)
+    accept(s, e)
+    assert escalate_unacknowledged(s, domain, "http://x", now=utcnow() + timedelta(days=10)) == []

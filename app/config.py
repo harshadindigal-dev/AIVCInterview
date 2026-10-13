@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     seed_on_startup: bool = True
     llm_timeout_seconds: float = 60.0
     retry_backoff_seconds: float = 2.0
+    # How often to check for routed enquiries nobody has acknowledged (0 disables).
+    escalation_check_seconds: int = 300
 
     @property
     def eval_model_list(self) -> list[str]:

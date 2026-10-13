@@ -13,11 +13,11 @@ The second weakness is complexity. The model tends to overrate it, usually becau
 - **A weekly spot-check of automatically routed enquiries,** because a confident mistake stays invisible until someone looks.
 - How often enquiries go to review and why, shifts in the service-line mix, failures and response times.
 
-**When the model gets it wrong:**
-- **Before anything is sent.** Suspected manipulation, conflicts and failed classifications always go to a person. The model can't send anything to an unexpected destination. If it's unavailable, the system tries a backup model, then the review queue.
-- **For a single enquiry.** Leads accept or reassign with one click, and each correction becomes new test data.
-- **For a recurring mistake.** Definitions and rules can be changed on a configuration screen, which shows which past enquiries a change would affect before it goes live.
-- **During rollout.** The system runs silently first, then makes suggestions, then routes on its own. Any service line that starts slipping goes back to suggestions.
+**When the model gets it wrong.** The principle is that no mistake should be silent. Every wrong answer has either a person in front of it or a deadline behind it.
+- **Before anything is sent:** suspected manipulation, conflicts and failed classifications always go to a person. An enquiry is archived as spam only if all three runs agree, so a genuine client can't disappear quietly.
+- **After it's sent:** if the lead neither accepts nor reassigns the enquiry within a deadline (4 hours for urgent work, 24 for normal), it comes back to the review queue automatically. A misroute nobody notices still resurfaces.
+- **For one enquiry:** a one-click reassign, with a reason. The correction becomes test data.
+- **For a pattern:** fix the definition or rule, with a preview of which past enquiries it would affect. If the cause isn't clear yet, switch that service line, or the whole system, to human triage while it's investigated. Every change can be reverted in one click.
 
 ---
 
@@ -64,14 +64,29 @@ The system is tuned to send more to review rather than less. Catching the cases 
 | Results on the test suite | Any safety case missed, or any measure down more than five points | Engineering | On every change, and weekly |
 | Cost per enquiry | Double the usual level | Engineering | Monthly |
 
-### Escalation, from prevention to learning
+### The fallback for each way the model can be wrong
 
-1. **Prevent.** Suspected manipulation, conflicts and failed classifications go straight to a person.
-2. **Catch.** Disagreement between runs, vague requests and out-of-scope enquiries go to the review queue, each with the reason shown.
-3. **Correct a single enquiry.** A lead or reviewer reassigns it or corrects the classification with one click, and gives a reason.
-4. **Correct a pattern.** When the same mistake keeps appearing, practice operations updates the relevant definition, rule or assignment. They check which past enquiries the change would affect before saving, and rerun the test suite after any change to the model's instructions.
-5. **Step back.** If a service line keeps making mistakes, or the provider is down, that line returns to suggestions only and the analyst triages it from the queue.
-6. **Learn.** Each week, corrections are added to the test set, so the next change to the model or its instructions is measured against real cases.
+| What goes wrong | How it's caught | What happens automatically | How we recover |
+|---|---|---|---|
+| **Wrong service line, stated confidently** (the most likely failure) | The lead reassigns it; the weekly spot-check; model-error rate per line | If nobody accepts or reassigns it within the deadline (4 hours urgent, 24 normal, 48 low), it returns to the review queue | One-click reassign with a reason; the correction becomes test data. Repeated errors in a line: fix its definition, or put the line in fallback mode |
+| **A genuine enquiry mistaken for spam** | The three runs disagree; a weekly look through the archive | Archived only when all three runs agree; otherwise it goes to review | Restore it from the archive with one click (reassign to a lead) |
+| **Urgency missed** (a deadline the client didn't flag) | The model reads urgency from the text and flags mismatches with the form | The acknowledgement deadline uses whichever is higher, stated or inferred urgency; complex urgent work copies the practice head | The reviewer adjusts and routes it; the case is added to the test set |
+| **A conflict or existing client missed** | A known conflict is a hard stop; subsidiaries are resolved to their group; partners report misses | Known conflicts never route automatically | Reassign with the reason "conflict"; correct the CRM record; in production, the conflicts system becomes a gate |
+| **Instructions hidden in an enquiry** | Flagged if any one of the three runs spots it | Always goes to a person; the model can't choose a destination anyway | The reviewer handles it; the example joins the test set |
+| **Complexity misjudged** | Shown with its reasoning; the lead corrects it | Rarely changes routing (only urgent complex work copies the practice head) | Correction recorded; rubric wording reviewed if the pattern persists |
+| **The model or provider fails** | Failure rate and response-time alerts | Retry, then a backup model, then the review queue; nothing is dropped | Pause automatic routing until it's stable |
+| **A change makes things worse** (prompt, model or rules) | Test-suite run on every change; model-error rate after release | Every decision records which prompt and configuration produced it | Revert the change in one click; pause or put lines in fallback mode meanwhile |
+
+### Switches for when something is wrong
+
+All three switches sit on the configuration screen. Each shows its effect on past enquiries before it's saved.
+- **Pause automatic routing.** Every enquiry goes to the review queue, as it would have before the system existed.
+- **Fallback mode for one service line.** Its enquiries go to a person while the problem is investigated; other lines are unaffected.
+- **Revert.** Any configuration change can be undone in one click from the change history.
+
+### Learning from mistakes
+
+Each week the corrections, and the reasons given for them, are added to the test set. The next change to the model or its instructions is then measured against real cases before it goes live.
 
 ### Rollout
 
