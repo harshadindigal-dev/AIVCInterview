@@ -70,6 +70,8 @@ routing_table:
 # Override rules, applied in this order. The first terminal rule decides the
 # destination; every rule evaluated is written to the routing trace.
 rules:
+  - id: hard_stop_review
+    description: Possible injection, conflict flag or classification failure -> review queue, before any other rule
   - id: archive_not_an_enquiry
     description: not_an_enquiry -> archive, no notification
   - id: existing_client
@@ -81,7 +83,15 @@ rules:
   - id: default
     description: Otherwise -> service-line lead
 
-# Review-queue triggers (section 5.4).
+# Hard stops: checked first, so nothing (including the existing-client rule)
+# can route these automatically.
+hard_stops:
+  flags:
+    - possible_injection
+  on_conflict_flag: true
+  on_classification_failure: true
+
+# Review-queue triggers (section 5.4), applied after the existing-client rule.
 review:
   # Number of the 3 runs whose service line must match the primary run.
   min_service_line_agreement: 3
@@ -92,8 +102,7 @@ review:
   exempt_flags:
     - urgency_mismatch
     - multi_service
-  review_on_conflict_flag: true
-  review_on_classification_failure: true
+  # Conflict and classification failure are hard stops (see above).
   # out_of_scope as the primary line always goes to review (it is also a flag).
   review_on_out_of_scope: true
 

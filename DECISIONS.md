@@ -21,6 +21,11 @@ Short entries: decision, alternatives considered, why.
 - **Alternatives:** Force a best guess.
 - **Why:** Forcing a label would penalise or reward the model on noise. Null-gold cases are excluded from the matching accuracy metric but still count for routing and review recall, where the correct action (review) is well defined.
 
-## D5. Conflict-flagged companies are non-clients in the CRM
-- **Decision:** Both conflict cases are prospects, not existing clients.
-- **Why:** The rule order in the brief puts "existing client → relationship partner" before "review flags". So a conflicted existing client would bypass review. The dataset avoids that combination. The open question is recorded in the README as a production risk.
+## D5. Hard-stop rule ahead of the brief's override order
+- **Decision:** A new first rule, `hard_stop_review`, sends an enquiry to review when any of these is true: the `possible_injection` flag is set, the CRM `conflict_flag` is true, or classification failed. It runs before archive and before existing-client routing. The order is: hard stop → archive → existing client → other review triggers → complex+high → default.
+- **Alternatives:** The brief's order, where existing client comes before all review flags.
+- **Why:** With the brief's order, an injection or a conflict from an existing client goes straight to a relationship partner without review. That is the most damaging silent misroute this system could make.
+  - **Classification failure is a hard stop:** when the call fails, the injection check never ran, and there is no service-line lead to copy.
+  - **Injection outranks archive:** an attacker could otherwise make a real enquiry disappear by getting it labelled spam.
+  - **Not hard stops:** vague, out-of-scope and other review triggers from existing clients still go to the relationship partner, who is best placed to call the client back.
+- **Dataset note:** both conflict cases are prospects. The rule is covered by unit tests rather than dataset records.
