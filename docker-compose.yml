@@ -16,6 +16,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/var/app.db}
     volumes:
       - appdata:/app/var
+      # Mounted so edits to taxonomy/rubric/routing/CRM take effect on restart, no rebuild.
+      - ./config:/app/config:ro
 
 volumes:
   appdata:
