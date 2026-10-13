@@ -92,3 +92,20 @@ def test_empty_states(client):
     assert "No notifications yet" in client.get("/notifications").text
     assert client.get("/enquiries/NOPE").status_code == 404
     assert client.get("/healthz").json()["ok"] is True
+
+
+def test_inbox_sorting_filters_and_search(client):
+    a = submit_and_wait(client, {**FORM, "company_name": "Zeta Ltd", "industry": "Technology"})
+    client.app.state.deps.client = FakeLLMClient(default=triage_payload(complexity="complex", flags=["vague"]))
+    b = submit_and_wait(client, {**FORM, "email": "b@beta.example", "company_name": "Alpha Ltd",
+                                 "description": "A different request about something else."})
+    page = lambda url: client.get(url).text
+    assert page("/enquiries?sort=company&dir=asc").index(b) < page("/enquiries?sort=company&dir=asc").index(a)
+    assert page("/enquiries?sort=complexity&dir=desc").index(b) < page("/enquiries?sort=complexity&dir=desc").index(a)
+    assert page("/enquiries?sort=status&dir=asc").index(b) < page("/enquiries?sort=status&dir=asc").index(a)  # in review first
+    only_tech = page("/enquiries?industry=Technology")
+    assert a in only_tech and b not in only_tech
+    assert b in page("/enquiries?q=alpha") and a not in page("/enquiries?q=alpha")
+    assert client.get("/enquiries?sort=bogus&dir=sideways").status_code == 200  # falls back to defaults
+    partial = client.get("/enquiries?sort=status&dir=asc", headers={"HX-Request": "true", "HX-Target": "inbox-table"}).text
+    assert 'value="status" hx-swap-oob="true"' in partial

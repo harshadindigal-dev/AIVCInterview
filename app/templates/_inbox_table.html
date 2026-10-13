@@ -1,13 +1,24 @@
+{% macro th(col, label) -%}
+  {%- set active = filters.sort == col -%}
+  {%- set next_dir = ('asc' if filters.dir == 'desc' else 'desc') if active else default_dir.get(col, 'asc') -%}
+  {%- set params = dict(filters, sort=col, dir=next_dir) -%}
+  {%- set url = '/enquiries?' ~ (params | dictsort | rejectattr(1, 'equalto', '') | list | urlencode) -%}
+  <th class="sortable {{ 'sorted' if active }}" aria-sort="{{ ('ascending' if filters.dir == 'asc' else 'descending') if active else 'none' }}">
+    <a href="{{ url }}" hx-get="{{ url }}" hx-target="#inbox-table" hx-push-url="true" hx-indicator="#inbox-spinner">{{ label }}<span class="sort-arrow">{{ ('▲' if filters.dir == 'asc' else '▼') if active else '↕' }}</span></a>
+  </th>
+{%- endmacro %}
+{% if oob %}{% include "_sort_inputs.html" %}{% endif %}
 {% if rows %}
 <div class="table-wrap">
 <table class="table">
-  <thead><tr><th>Received</th><th>Company</th><th>Summary</th><th>Service line</th><th>Complexity</th><th>Urgency</th><th>Destination</th><th>Status</th></tr></thead>
+  <thead><tr>{{ th('received', 'Received') }}{{ th('company', 'Company') }}{{ th('industry', 'Industry') }}<th>Summary</th>{{ th('service_line', 'Service line') }}{{ th('complexity', 'Complexity') }}{{ th('urgency', 'Urgency') }}{{ th('destination', 'Destination') }}{{ th('status', 'Status') }}</tr></thead>
   <tbody>
   {% for e in rows %}
   <tr class="row-link" onclick="location.href='/enquiries/{{ e.id }}'">
     <td class="nowrap muted">{{ e.submitted_at.strftime('%d %b %H:%M') }}</td>
-    <td><a href="/enquiries/{{ e.id }}">{{ e.company_name }}</a><div class="muted small">{{ e.id }}</div></td>
-    <td class="summary-cell">{{ (e.summary or ('Duplicate of ' ~ e.duplicate_of if e.duplicate_of else '—')) | truncate(110) }}</td>
+    <td><a href="/enquiries/{{ e.id }}">{{ e.company_name }}</a><div class="muted small">{{ e.id }} · {{ e.company_size }}</div></td>
+    <td class="small">{{ e.industry }}</td>
+    <td class="summary-cell">{{ (e.summary or ('Duplicate of ' ~ e.duplicate_of if e.duplicate_of else '—')) | truncate(100) }}</td>
     <td>{{ domain.line_name(e.service_line) if e.service_line else '—' }}</td>
     <td>{% if e.complexity %}<span class="cx cx-{{ e.complexity }}">{{ e.complexity }}</span>{% else %}—{% endif %}</td>
     <td class="nowrap">{{ e.stated_urgency }}{% if e.inferred_urgency and e.inferred_urgency != e.stated_urgency %} → {{ e.inferred_urgency }} <span class="warn-marker" title="Stated and inferred differ">&#9888;</span>{% endif %}</td>
@@ -18,11 +29,11 @@
   </tbody>
 </table>
 </div>
-<p class="muted small">{{ rows | length }} enquir{{ 'y' if rows | length == 1 else 'ies' }}.</p>
+<p class="muted small">{{ rows | length }} enquir{{ 'y' if rows | length == 1 else 'ies' }}. Click a column heading to sort; click again to reverse.</p>
 {% else %}
 <div class="empty">
-  {% if filters.service_line or filters.status or filters.destination %}
-  <p class="empty-title">No enquiries match these filters.</p><p><a href="/enquiries">Clear filters</a></p>
+  {% if filters.service_line or filters.status or filters.destination or filters.industry or filters.q %}
+  <p class="empty-title">No enquiries match these filters.</p><p><a href="/">Clear filters</a></p>
   {% else %}
   <p class="empty-title">No enquiries yet.</p><p><a href="/submit">Submit one</a>, or wait for the seed data to finish loading.</p>
   {% endif %}

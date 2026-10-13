@@ -372,25 +372,59 @@ def _outcomes(s: Session) -> dict[str, Any]:
             "review_share": c["review"] / triaged if triaged else None}
 
 
+# Sort keys for the inbox. Ordinal fields sort by meaning, not alphabetically.
+_STATUS_ORDER = ["in_review", "processing", "auto_routed", "reassigned", "accepted", "archived", "duplicate"]
+_LEVEL = {"simple": 0, "moderate": 1, "complex": 2, "low": 0, "normal": 1, "high": 2}
+INBOX_SORTS: dict[str, Any] = {
+    "received": lambda e: e.submitted_at,
+    "company": lambda e: e.company_name.lower(),
+    "industry": lambda e: e.industry,
+    "service_line": lambda e: e.service_line or "~",
+    "complexity": lambda e: _LEVEL.get(e.complexity or "", -1),
+    "urgency": lambda e: (_LEVEL.get(e.inferred_urgency or e.stated_urgency, -1), _LEVEL.get(e.stated_urgency, -1)),
+    "destination": lambda e: (e.destination_name or "~").lower(),
+    "status": lambda e: _STATUS_ORDER.index(e.status) if e.status in _STATUS_ORDER else 99,
+}
+# First click on a column: newest / most severe / most urgent first; names A-Z.
+_DEFAULT_DIR = {"received": "desc", "complexity": "desc", "urgency": "desc"}
+
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/enquiries", response_class=HTMLResponse)
-def inbox(request: Request, service_line: str = "", status: str = "", destination: str = ""):
+def inbox(request: Request, service_line: str = "", status: str = "", destination: str = "", industry: str = "",
+          q: str = "", sort: str = "received", dir: str = ""):
+    if sort not in INBOX_SORTS:
+        sort = "received"
+    if dir not in ("asc", "desc"):
+        dir = _DEFAULT_DIR.get(sort, "asc")
     with session(request) as s:
-        q = select(Enquiry).order_by(Enquiry.submitted_at.desc())
+        stmt = select(Enquiry)
         if service_line:
-            q = q.where(Enquiry.service_line == service_line)
+            stmt = stmt.where(Enquiry.service_line == service_line)
         if status:
-            q = q.where(Enquiry.status == status)
+            stmt = stmt.where(Enquiry.status == status)
         if destination:
-            q = q.where(Enquiry.destination_name == destination)
-        rows = s.exec(q).all()
+            stmt = stmt.where(Enquiry.destination_name == destination)
+        if industry:
+            stmt = stmt.where(Enquiry.industry == industry)
+        rows = s.exec(stmt).all()
         destinations = sorted({d for d in s.exec(select(Enquiry.destination_name)).all() if d})
+        industries = sorted({d for d in s.exec(select(Enquiry.industry)).all() if d})
         outcomes = _outcomes(s)
-    filters = dict(service_line=service_line, status=status, destination=destination)
+    if q.strip():
+        needle = q.strip().lower()
+        rows = [e for e in rows if needle in " ".join(
+            filter(None, [e.id, e.company_name, e.name, e.email, e.summary, e.description])).lower()]
+    # Stable secondary order: newest first within equal keys.
+    rows.sort(key=lambda e: e.submitted_at, reverse=True)
+    rows.sort(key=INBOX_SORTS[sort], reverse=(dir == "desc"))
+    filters = dict(service_line=service_line, status=status, destination=destination, industry=industry, q=q,
+                   sort=sort, dir=dir)
+    ctx = dict(rows=rows, filters=filters, default_dir=_DEFAULT_DIR)
     if is_htmx(request) and request.headers.get("HX-Target") == "inbox-table":
-        return render(request, "_inbox_table.html", rows=rows, filters=filters)
-    return render(request, "inbox.html", nav="inbox", rows=rows, filters=filters, destinations=destinations,
-                  outcomes=outcomes)
+        return render(request, "_inbox_table.html", oob=True, **ctx)
+    return render(request, "inbox.html", nav="inbox", destinations=destinations, industries=industries,
+                  outcomes=outcomes, **ctx)
 
 
 @app.get("/review", response_class=HTMLResponse)
