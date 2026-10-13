@@ -67,9 +67,10 @@ Short entries: decision, alternatives considered, why.
 
 ## D15. Seeding shifts dataset dates to end yesterday, and seeds some feedback marked `source=seed`
 - **Why:** The 7- and 30-day metrics need recent data whenever the app is started, and the relative gaps between records (which dedupe relies on) are preserved. The reassignment metrics need some feedback rows. Seeded feedback is limited to:
-  - corrections where the model disagreed with gold;
-  - two plausible reassignments;
+  - corrections where the model disagreed with gold (none for the default model on this set);
   - twelve accepts.
+
+  An earlier version also seeded two "plausible" reassignments. I removed them: the model was right on both by gold, so they invented disagreement and inflated the reassignment rate.
 
   Seeded rows are labelled "seeded demo" in the UI and excluded from `export_feedback.py` by default.
 

@@ -7,7 +7,7 @@
 {% block content %}
 <div class="detail-head">
   <div>
-    <p class="crumbs"><a href="/enquiries">Inbox</a> / {{ e.id }}</p>
+    <p class="crumbs"><a href="/">Inbox</a> / {{ e.id }}</p>
     <h1>{{ e.company_name }}</h1>
     <p class="muted">Submitted {{ e.submitted_at | dt }} by {{ e.name }} &lt;{{ e.email }}&gt; · {{ e.industry }} · {{ e.company_size }} employees</p>
   </div>

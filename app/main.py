@@ -203,7 +203,7 @@ def _samples() -> dict[str, list[dict[str, Any]]]:
     return groups
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/submit", response_class=HTMLResponse)
 def submit_page(request: Request):
     return render(request, "submit.html", nav="submit", samples=_samples(), industries=INDUSTRIES,
                   sizes=COMPANY_SIZES, urgencies=URGENCIES, values={}, errors={})
@@ -358,6 +358,21 @@ def _404():
 
 # -- inbox / review ------------------------------------------------------------------------
 
+def _outcomes(s: Session) -> dict[str, Any]:
+    """Where each enquiry was first sent by the system (before any human action)."""
+    first: dict[str, str] = {}
+    for r in s.exec(select(PipelineRun).order_by(PipelineRun.id)).all():
+        first.setdefault(r.enquiry_id, (r.final_destination or "").split(":")[0])
+    c = {"auto": 0, "review": 0, "archive": 0, "duplicate": 0}
+    for dest in first.values():
+        c["auto" if dest in ("lead", "partner") else dest if dest in c else "review"] += 1
+    triaged = c["auto"] + c["review"] + c["archive"]
+    return {**c, "triaged": triaged, "total": triaged + c["duplicate"],
+            "auto_share": c["auto"] / triaged if triaged else None,
+            "review_share": c["review"] / triaged if triaged else None}
+
+
+@app.get("/", response_class=HTMLResponse)
 @app.get("/enquiries", response_class=HTMLResponse)
 def inbox(request: Request, service_line: str = "", status: str = "", destination: str = ""):
     with session(request) as s:
@@ -370,10 +385,12 @@ def inbox(request: Request, service_line: str = "", status: str = "", destinatio
             q = q.where(Enquiry.destination_name == destination)
         rows = s.exec(q).all()
         destinations = sorted({d for d in s.exec(select(Enquiry.destination_name)).all() if d})
+        outcomes = _outcomes(s)
     filters = dict(service_line=service_line, status=status, destination=destination)
     if is_htmx(request) and request.headers.get("HX-Target") == "inbox-table":
         return render(request, "_inbox_table.html", rows=rows, filters=filters)
-    return render(request, "inbox.html", nav="inbox", rows=rows, filters=filters, destinations=destinations)
+    return render(request, "inbox.html", nav="inbox", rows=rows, filters=filters, destinations=destinations,
+                  outcomes=outcomes)
 
 
 @app.get("/review", response_class=HTMLResponse)

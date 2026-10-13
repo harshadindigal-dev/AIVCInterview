@@ -4,8 +4,8 @@ Dates are shifted so the newest record is one day old (keeps the 7/30-day
 metrics populated whenever the app is started). A few human actions are also
 seeded, clearly marked source="seed", so the metrics page has reassignment data:
 - enquiries the model got wrong (vs gold) are marked misclassified with the gold labels;
-- two close calls are reassigned the way a reviewer plausibly would;
 - the oldest correctly routed enquiries are accepted.
+No human disagreement is invented: if the model matched gold, the only seeded action is an accept.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from typing import Any
 from sqlmodel import Session, func, select
 
 from app.evaluation import FORM_FIELDS, load_dataset
-from app.feedback import accept, mark_misclassified, reassign
+from app.feedback import accept, mark_misclassified
 from app.models import Enquiry, utcnow
 from app.pipeline.intake import text_hash
 from app.pipeline.run import PipelineDeps, create_enquiry, process_enquiry
@@ -29,12 +29,6 @@ log = logging.getLogger("seed")
 
 status: dict[str, Any] = {"state": "idle", "done": 0, "total": 0, "error": None}
 _lock = threading.Lock()
-
-DEMO_REASSIGNMENTS = {
-    "E027": ("people", "Mostly an org redesign and consultation; ERP is the smaller piece."),
-    "E046": ("risk_reg", "They need readiness work first; assurance comes later."),
-}
-
 
 def needs_seed(engine) -> bool:
     with Session(engine) as s:
@@ -96,11 +90,6 @@ def _seed_feedback(engine, deps: PipelineDeps, records: list[dict[str, Any]]) ->
             if g["primary_service_line"] in domain.service_line_ids and e.service_line != g["primary_service_line"]:
                 mark_misclassified(s, domain, e, g["primary_service_line"], g["complexity"] or e.complexity,
                                    "Seeded correction from gold label", deps.base_url, source="seed")
-                handled.add(eid)
-        for eid, (lead, reason) in DEMO_REASSIGNMENTS.items():
-            e = enqs.get(eid)
-            if e and eid not in handled and e.destination_type == "lead" and e.destination_key != lead:
-                reassign(s, domain, e, lead, reason, deps.base_url, source="seed")
                 handled.add(eid)
         routed = sorted((e for e in enqs.values() if e.status == "auto_routed" and e.id not in handled),
                         key=lambda e: e.submitted_at)

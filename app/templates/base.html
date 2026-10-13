@@ -12,9 +12,9 @@
   <div class="topbar-inner">
     <a class="brand" href="/">Intake Triage</a>
     <nav class="nav">
-      <a href="/" class="{{ 'active' if nav == 'submit' }}">Submit</a>
-      <a href="/enquiries" class="{{ 'active' if nav == 'inbox' }}">Inbox</a>
+      <a href="/" class="{{ 'active' if nav == 'inbox' }}">Inbox</a>
       <a href="/review" class="{{ 'active' if nav == 'review' }}">Review queue <span id="review-count" class="badge">{{ review_count }}</span></a>
+      <a href="/submit" class="{{ 'active' if nav == 'submit' }}">Submit enquiry</a>
       <a href="/eval" class="{{ 'active' if nav == 'eval' }}">Evaluation</a>
       <a href="/notifications" class="{{ 'active' if nav == 'notifications' }}">Notifications log</a>
       <a href="/metrics" class="{{ 'active' if nav == 'metrics' }}">Health</a>

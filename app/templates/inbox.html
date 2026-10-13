@@ -3,8 +3,17 @@
 {% block content %}
 <div class="page-head">
   <h1>Inbox</h1>
-  <p class="muted">Every enquiry, newest first.</p>
+  <p class="muted">Each enquiry is classified by service line and complexity (three model runs compared), enriched from the CRM, and routed by the rules in <code>config/routing.yaml</code>. Anything uncertain, conflicted or suspicious goes to a human. Open any row to see why it went where it did.</p>
 </div>
+{% if outcomes.total %}
+<div class="outcomes card">
+  <div class="outcome"><span class="outcome-value">{{ outcomes.auto }}</span><span class="outcome-label">routed to a team lead automatically</span><span class="outcome-sub">{{ outcomes.auto_share | pct }} of triaged</span></div>
+  <div class="outcome outcome-review"><a href="/review"><span class="outcome-value">{{ outcomes.review }}</span></a><span class="outcome-label">sent to a human for review</span><span class="outcome-sub">{{ outcomes.review_share | pct }} of triaged</span></div>
+  <div class="outcome"><span class="outcome-value">{{ outcomes.archive }}</span><span class="outcome-label">archived (spam, job applications, vendor pitches)</span></div>
+  <div class="outcome"><span class="outcome-value">{{ outcomes.duplicate }}</span><span class="outcome-label">duplicates linked, not re-triaged</span></div>
+  <p class="outcome-note small muted">Today an analyst reads all {{ outcomes.total }} enquiries (about 8 hours a week). With this system, a person reads the {{ outcomes.review }} in review; team leads confirm or reassign the rest with one click.</p>
+</div>
+{% endif %}
 <form class="filters" hx-get="/enquiries" hx-target="#inbox-table" hx-trigger="change" hx-push-url="true" hx-indicator="#inbox-spinner">
   <select name="service_line" aria-label="Service line">
     <option value="">All service lines</option>

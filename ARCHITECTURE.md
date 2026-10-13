@@ -1,126 +1,84 @@
 # Architecture
 
-## Overview
-
 ```mermaid
 flowchart LR
-    F[Web form / Submit page] --> I[Intake<br/>validate · normalise · dedupe]
-    I -- duplicate --> DUP[(Link to original<br/>skip triage)]
-    I --> E[Enrich<br/>CRMClient · CompanyData]
-    E --> C[Classify<br/>3 LLM runs · schema validation · retry]
-    C <--> OR[[OpenRouter<br/>→ upstream provider]]
-    C --> R[Route<br/>rules from routing.yaml]
-    R -- lead / partner --> N[Notify<br/>notification log]
+    F[Web form] --> I[Intake<br/>validate · normalise · dedupe]
+    I -- duplicate --> DUP[(Link to original)]
+    I --> E[Enrich<br/>CRM · company data]
+    E --> C[Classify<br/>3 LLM runs · schema-validated]
+    C <--> OR[[OpenRouter → provider]]
+    C --> R[Route<br/>rules in routing.yaml]
+    R -- lead / partner --> N[Notify team lead]
     R -- review --> Q[Review queue]
-    Q --> N
-    R -- archive --> A[(Archived)]
-    N --> H[Human: Accept · Reassign · Mark misclassified]
-    Q --> H
-    H --> FB[(Feedback)]
-    FB --> M[/metrics/]
-    FB --> X[export_feedback.py → eval data]
-    I & E & C & R & N --> AU[(Audit log<br/>one row per run)]
-    Y[config/*.yaml] -. prompt + routing .-> C & R
+    R -- archive --> A[(Archive)]
+    N & Q --> H[Human: Accept · Reassign · Correct]
+    H --> FB[(Feedback)] --> M[/metrics + eval data/]
+    Y[config/*.yaml] -.-> C & R
 ```
 
 ## Data flow
 
-1. **Intake** (`pipeline/intake.py`): Pydantic validates the form, using the fixed lists and a 10–5000 character description. The original text is stored exactly as submitted. A whitespace-normalised copy is used for the dedupe hash: sha256 of the email plus the normalised, lowercased text. A match within 7 days links the new enquiry to the original and skips triage, so no second notification goes out.
-2. **Enrich** (`pipeline/enrich.py`): `CRMClient.lookup(email_domain, company_name)` and `CompanyData.lookup(company_name)` are abstract interfaces. Each has a mock that reads `config/crm_clients.json`.
-   - Free-mail domains never match on domain, only on name.
-   - The result includes existing client, relationship partner, conflict flag, and stated vs recorded size and industry.
-   - Enrichment is best-effort: an exception is recorded and the pipeline continues.
-3. **Classify** (`pipeline/classify.py`):
-   - **Calls:** three concurrent calls with the same prompt. Run 0 is the result; runs 1–2 only vote.
-   - **Prompt:** generated from the YAML files (`llm/prompts.py`). The enquiry goes inside `<enquiry>` tags marked as untrusted, and the tags are escaped so submitted text can't close them early.
-   - **Validation:** output is checked against a strict JSON schema, whose enums come from the taxonomy, then again by Pydantic against the taxonomy ids.
-   - **Retries:** each run retries once on an API error or invalid output, with backoff for 429/502/503. If run 0 still fails, the result is `classification_failed`.
-   - **No confidence scores:** the model is never asked for one. Agreement across runs is recorded instead.
-4. **Route** (`pipeline/route.py`): a pure function over the classification, the enrichment and the stated urgency. It applies the rules in `routing.yaml` order:
-   1. hard stop (injection, conflict, classification failure) → review;
+1. **Intake.** The form is validated against fixed lists (description 10–5000 characters). The original text is stored verbatim. A hash of the email plus whitespace-normalised text links resubmissions within 7 days, and a linked duplicate skips triage.
+2. **Enrich.** `CRMClient` and `CompanyData` interfaces, mocked from JSON, return existing client, relationship partner, conflict flag, and stated vs recorded size. Enrichment is best-effort: a failure is logged and never blocks the enquiry.
+3. **Classify.**
+   - **Prompt:** generated from `taxonomy.yaml` and `rubric.yaml`. The enquiry sits in `<enquiry>` tags marked as untrusted.
+   - **Calls:** three concurrent calls. Run 0 is the answer; runs 1–2 vote, and agreement on service line and complexity is recorded. The model is never asked for a confidence score.
+   - **Output:** a strict JSON schema with enums taken from the taxonomy, validated again with Pydantic. Each run retries once on an API or validation error. If run 0 still fails, the result is `classification_failed`.
+   - **Fields:** primary and secondary service lines, complexity with a rationale citing the rubric, inferred urgency, key entities, questions to ask the client, flags, and a one-line summary.
+4. **Route.** A pure function, so the same inputs always give the same answer. It applies the rules below in order, and the first rule that fires decides:
+   1. hard stop (injection, conflict or failure) → review;
    2. not an enquiry → archive;
-   3. existing client → partner, with the line lead copied;
-   4. other review triggers → review;
+   3. existing client → relationship partner, with the line lead copied;
+   4. other review triggers (runs disagree, vague, out of scope) → review;
    5. complex + high urgency → lead, with the practice head copied;
-   6. default → lead.
+   6. otherwise → lead.
 
-   Every rule evaluated goes into the trace with its result. The model can only output taxonomy ids, so it cannot name a person. Routing to "the CEO" has no path.
-5. **Notify** (`pipeline/notify.py`): writes a rendered email or Slack message to the notification log, with Accept/Reassign links. Archived and duplicate enquiries send nothing.
-6. **Audit** (`pipeline/run.py`): one `PipelineRun` row per run. It holds the enrichment output, prompt version, requested and answering model, provider, all raw outputs (including failed attempts), the parsed result, the routing trace, the final destination, latency per step, tokens and reported cost. Logs go to stdout as one JSON line per step.
+   Every rule checked is written to a trace that the UI shows. The model can only name taxonomy ids, never a person.
+5. **Notify and audit.**
+   - **Notify:** a rendered email or Slack message with Accept and Reassign links, written to a log.
+   - **Audit:** one row per run, holding the enrichment, prompt version, requested and answering model, provider, all raw outputs, the parsed result, the trace, the destination, latency per step, tokens and reported cost.
 
-`run_pipeline()` is a plain function. The web app calls it in a background thread and polls progress over HTMX. A job queue could call the same function unchanged.
+`run_pipeline()` is one callable. The demo runs it in a background thread; a job queue could call it unchanged.
 
 ## Model and API choices
 
-- **OpenRouter through the `openai` SDK.** All OpenRouter-specific code is in `llm/client.py`, behind the `LLMClient` interface. That interface has two methods: `complete_json` and `supports_temperature`.
-- **`require_parameters: true` on every call.** Without it, a request can land on a provider that ignores `response_format` and returns free text.
-- **Structured output via strict `json_schema`, not a forced tool call** (D6). Temperature is sent only to models that list it in OpenRouter's `/models` (D7).
-- **Default model:** `anthropic/claude-sonnet-5.5`. It gives the best complexity accuracy and the most useful rationales on the eval. Haiku matches it on routing at 1/16th of the cost, which is the obvious lever if volume grows (README, Evaluation).
+- **OpenRouter through the `openai` SDK, behind a one-class `LLMClient` interface.** Every request sends `provider.require_parameters: true`, so a provider can't silently ignore the schema, and `usage.include: true` for per-call cost.
+- **Default `anthropic/claude-sonnet-5.5`.** On the eval it had the best complexity accuracy (90%) and the most useful rationales.
+- **`claude-haiku-5.5` matched it on routing and every safety metric at 1/16th of the cost** ($2.50 vs $40 per 1,000), but scored only 66% on complexity.
+- **Structured output is `json_schema`, not a forced tool call,** because current Claude providers on OpenRouter reject forced `tool_choice` (DECISIONS D6).
+
+**Why OpenRouter.** One API across vendors makes model comparison a config change, and it gives built-in fallbacks and measured cost.
+
+**Against it:** a third party handles client data, and there is an extra network hop. For production:
+- restrict to zero-data-retention providers;
+- keep prompt logging off and cover OpenRouter in the DPA;
+- redact names and phone numbers before the call.
+
+Once the eval has picked a model, the clean option is to call that provider directly, for example Bedrock in the firm's own account. That is one new `LLMClient` class. Keep OpenRouter for evaluation.
 
 ## Integration points
 
-| Component | Demo | Production equivalent |
+| Component | In the prototype | Production |
 |---|---|---|
-| Web form | Submit page | POST from the website form handler (same `EnquiryIn` schema) |
-| CRM lookup | `MockCRMClient` (JSON file) | `CRMClient` implementation for Dynamics / Salesforce / InterAction |
-| Company data | `MockCompanyData` (JSON file) | Companies House / D&B / internal client master |
-| Conflict check | `conflict_flag` in the JSON file | The firm's conflicts system; arguably a hard gate before any routing |
-| LLM | OpenRouter | OpenRouter with ZDR-only providers, or the chosen provider directly (one new `LLMClient` class) |
-| Notifications | `Notification` table + log page | Email (Graph / SES) and Slack, with signed Accept/Reassign links |
-| Database | SQLite on a Docker volume | Postgres (SQLModel; only the URL changes) |
-| Auth | None | SSO (Entra ID / Okta) in front of the app; actions attributed to the user |
-| Pipeline execution | Background thread per submission | A queue worker calling the same `run_pipeline` |
-
-## Real, mocked, or not built
-
-| Component | Status |
-|---|---|
-| Validation, normalisation, dedupe | Real |
-| LLM classification, 3-run agreement, retry, fallback model | Real (live OpenRouter calls) |
-| Prompt generated from YAML | Real |
-| Routing rules, trace, review triggers | Real |
-| Audit log, per-call cost, tokens, provider | Real |
-| Feedback (accept / reassign / misclassified) and export to JSONL | Real |
-| Metrics page | Real (computed from the database) |
-| Evaluation harness | Real |
-| CRM, company data | Mocked (JSON) → CRM / company-data APIs |
-| Conflict check | Mocked (a CRM field) → conflicts system |
-| Email / Slack | Mocked (notification log) → Graph / Slack API |
-| Auth / SSO, user attribution | Not built |
-| Job queue, horizontal scale | Not built (about 10 enquiries a day) |
-| Data retention / PII redaction | Not built |
-| Fine-tuned or embedding classifier | Not built (next step once feedback data exists) |
+| Web form | Submit page (`EnquiryIn` schema) | Website form handler POSTs the same schema |
+| CRM / company data | Mocked from JSON behind interfaces | Dynamics/Salesforce, Companies House/D&B implementations |
+| Conflict check | A CRM field | The firm's conflicts system, as a hard gate |
+| LLM | OpenRouter, live | ZDR-restricted OpenRouter, or the provider directly |
+| Notifications | Logged, rendered | Email (Graph) and Slack, with signed Accept/Reassign links |
+| Storage | SQLite | Postgres (the URL changes, nothing else) |
+| Auth | Not built | SSO in front; every action attributed to a user |
 
 ## Instrumented from day one
 
-- **Per run:** latency per step, tokens, reported cost, model and provider, and agreement counts. Raw outputs from every attempt are stored, including the failed ones.
-- **Per enquiry:** the full routing trace, the review reasons, and every human action with old value, new value and reason.
-- **`/metrics`:** reassignment rate (overall and per predicted line), review-queue rate with reasons, service-line mix over 7 and 30 days, classification failure rate, p50/p95 latency, providers and models seen.
-- **`make eval`:** the regression gate for any prompt, model or taxonomy change. Results are versioned by `PROMPT_VERSION`.
+- **Per call:** latency, tokens, reported cost, model and provider, agreement.
+- **Per enquiry:** the routing trace and every human action (old value, new value, reason).
+- **`/metrics`:** reassignment rate overall and per predicted line, review rate and reasons, 7- and 30-day service-line mix, failure rate, p50/p95 latency.
+- **`make eval`:** the regression gate for any prompt, model or taxonomy change, versioned by `PROMPT_VERSION`.
 
-## Rollout plan
+## Rollout
 
-1. **Shadow mode (2–4 weeks).** The analyst keeps triaging by hand. The system runs on every enquiry and writes its decision, but sends no notifications. Each week, compare its decisions with the analyst's.
-   - *Exit criteria:* review recall ≥ 95% against the analyst's "should a human look" judgement, auto-route precision ≥ 95%.
-   - *Also measure* whether the 3-run agreement check catches anything. It never fired on the synthetic set.
-2. **Assisted (4–8 weeks).** Notifications go to team leads with the suggested routing. Each enquiry needs one click: Accept or Reassign. The analyst works the review queue. Reassignment rate per line is the health metric; a line above about 10% gets its taxonomy entry and examples revisited.
-3. **Automatic for high-confidence enquiries.** An enquiry routes without a click when it has 3/3 agreement, no flags, isn't from an existing client, and is in a line with a reassignment rate below threshold. Everything else stays assisted.
-   - The review queue and the hard stops never go away.
-   - A weekly `make eval`, on the synthetic set plus exported feedback, guards against model or prompt drift.
-
-## Why OpenRouter, and its trade-offs
-
-**For:**
-- One API and one SDK across vendors, so comparing Claude, Gemini and others was a config change.
-- Built-in fallbacks: the `models` array.
-- Per-call cost reporting, so the eval's cost per 1,000 is measured, not estimated.
-- Visibility of which upstream provider served each request. That matters because the same slug can be served by Anthropic, Bedrock, Vertex or Azure, with small behavioural differences.
-
-**Against:**
-- **A third party sits between the firm and the model provider.** Client enquiries contain confidential commercial information, so for production:
-  - Restrict routing to providers with zero data retention, using OpenRouter's data policy settings or a per-request `provider` preference. Disallow providers that train on prompts.
-  - Confirm OpenRouter's own retention and logging terms and get them into the DPA. Its prompt logging is off unless enabled; keep it off.
-  - Redact what isn't needed (personal names, phone numbers) before the call.
-- **An extra network hop:** some added latency, small next to 4–10s of model time. It is also another dependency whose outages affect availability; the fallback is to retry, then the review queue.
-- **Silent provider variation:** two calls to the same slug may hit different providers. The audit log stores the provider per call so differences can be traced, and `require_parameters` prevents the worst case (schema ignored).
-- **Exit path:** once evaluation has picked a model, call that provider directly in production, for example Anthropic's API or Bedrock in the firm's own cloud account. That is one new class implementing `LLMClient`; the prompt, schema, validation, routing and eval harness don't change. Keep OpenRouter for the evaluation workflow, where cross-vendor comparison is the point.
+1. **Shadow mode (2–4 weeks).** The system runs silently alongside the analyst and is compared weekly.
+   - *Exit criteria:* review recall and auto-route precision of at least 95%.
+   - *Also measure* whether run disagreement catches anything.
+2. **Assisted.** Team leads get the suggestion and confirm it with one click. The analyst works only the review queue.
+3. **Automatic for high-confidence enquiries:** 3/3 agreement, no flags, not an existing client, and a line with a low reassignment rate. The hard stops and the review queue stay permanently.

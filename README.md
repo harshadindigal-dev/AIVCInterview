@@ -2,6 +2,20 @@
 
 A working prototype that reads inbound client enquiries for a professional services firm. It classifies each one by service line, complexity and urgency, enriches it from the CRM, and routes it to a team lead. Anything uncertain, conflicted or suspicious goes to a human review queue instead. Every routing decision shows the rules that produced it, and every human correction is recorded as feedback that can become evaluation data.
 
+## Where to find what the brief asks for
+
+| Brief asks for | Where it is |
+|---|---|
+| Prototype of the core classification and routing logic | `app/pipeline/` (`classify.py`, `route.py`, about 400 lines). Run it on one enquiry with `python -m scripts.triage E043`, or use the app (Inbox → any enquiry → *Why it went here*) |
+| Classifies (service line, complexity) | `classify.py`. The prompt is generated from [`config/taxonomy.yaml`](config/taxonomy.yaml) and [`config/rubric.yaml`](config/rubric.yaml) |
+| Enriches | `enrich.py` (CRM and company data, mocked behind interfaces), plus model-extracted entities, urgency and questions for the client |
+| Routes to the right team lead | `route.py`, using the rules in [`config/routing.yaml`](config/routing.yaml) |
+| Synthetic data | [`data/synthetic_enquiries.jsonl`](data/synthetic_enquiries.jsonl): 50 hand-labelled records, half of them deliberately hard |
+| Evidence that it works, and where it doesn't | `/eval` page, the table below, and [`eval_results/failure_notes.md`](eval_results/failure_notes.md) |
+| Architecture document | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Brief write-up | [WRITEUP.md](WRITEUP.md) |
+| Trade-offs behind each choice | [DECISIONS.md](DECISIONS.md) |
+
 ## Quick start
 
 ```bash
@@ -14,7 +28,7 @@ open http://localhost:8000
 - **Later starts** reuse the database volume. `make reset-db` deletes it, and the next start re-seeds.
 - **No key:** without `OPENROUTER_API_KEY` the container stops at startup with a message saying so. This build is live-only (DECISIONS.md D1).
 
-**Try the hard cases:** on the Submit page, open **Load sample → Hard cases**. Good ones to start with:
+The home page is the Inbox: every enquiry with its service line, complexity and destination, plus how many needed a human. **Try the hard cases:** go to **Submit enquiry** and open **Load sample → Hard cases**. Good ones to start with:
 - *Prompt injection*: Fairbanks Motors and Lister Wholesale.
 - *Conflict flag*: Brightwater Capital.
 - *Vague*: Moorgate Payments.
@@ -28,6 +42,7 @@ Submit any sample twice to see the duplicate check. Then open the enquiry: the *
 | `make test` | 69 tests in the image (one makes a live call, about $0.05) |
 | `make eval` | Re-run the evaluation for all configured models (about $3) |
 | `make reset-db` | Delete the database volume; the next `make up` re-seeds |
+| `python -m scripts.triage E030` | Core logic only, no UI: classification, agreement, enrichment and routing trace for one enquiry (a dataset id or free text) |
 
 ## Live mode and models
 
@@ -72,25 +87,7 @@ All of these are editable in `config/`. Restart to apply; no rebuild is needed b
 
 ## What would break first in production
 
-**Silent misroutes.** A confident, wrong classification goes straight to the wrong lead, and nobody notices until the client chases.
-- *Monitor:* reassignment rate overall and per predicted service line (`/metrics`). Also the age of un-accepted auto-routed enquiries.
-- *Fallback:* run in shadow and then assisted mode first (ARCHITECTURE.md). Every notification carries one-click Accept/Reassign links. Raise the review threshold for any line whose reassignment rate climbs.
-
-**Taxonomy drift.** The firm launches an ESG practice, or "AI governance" requests start arriving. The model forces them into the nearest existing line, and the agreement check won't catch it because the runs will agree.
-- *Monitor:* service-line mix over 7 and 30 days against the baseline. Reassignments into a line from many different predicted lines. A rising `out_of_scope` share.
-- *Fallback:* the taxonomy is YAML and the prompt is regenerated from it. Add the line, re-run `make eval` on the labelled set plus exported feedback, and bump `PROMPT_VERSION`.
-
-**Multi-service enquiries.** Routing picks one owner. A deal with a big tax component can sit with the deals lead while tax only finds out later.
-- *Monitor:* the share of `multi_service` flags, and reassignments between the primary and secondary lines.
-- *Fallback:* copy the secondary line's lead on multi-service enquiries. That is a one-rule change in `route.py`, deliberately not on by default, to avoid inbox noise.
-
-**Form input quality.** One-liners, the wrong size band, urgency set to "high" by default. Stated fields are unreliable: two dataset companies misstate their size, and both urgency-mismatch cases contradict the form.
-- *Monitor:* `vague` flag rate, the stated-vs-recorded size mismatches on the enrichment panel, and the urgency mismatch rate.
-- *Fallback:* vague enquiries already go to review with "Questions to ask the client". If the rate is high, fix the form (required fields, examples) rather than the model.
-
-**Dependence on the provider.** OpenRouter or the upstream provider is down or slow, or a model update changes behaviour silently.
-- *Monitor:* classification failure rate, p95 latency, which model and provider answered (stored per call), and a weekly `make eval` against a pinned prompt version.
-- *Fallback:* retry with backoff, then the OpenRouter fallback model, then `classification_failed` → review queue. Enquiries are never dropped, and at about 10 a day a human can triage by hand for a day. Pin model versions in production.
+See **[WRITEUP.md](WRITEUP.md)** (half a page): confident misroutes from taxonomy drift break first; reassignment rate per service line is the signal; hard stops, the review queue, one-click Reassign and a shadow → assisted rollout are the fallback.
 
 ## What I'd do with more time
 

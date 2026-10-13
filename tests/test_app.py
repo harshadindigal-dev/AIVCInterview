@@ -58,6 +58,8 @@ def test_submit_flow_and_detail_explains_routing(client):
     assert d.status_code == 200
     assert "Daniel Whitfield" in d.text and "Why it went here" in d.text and "Decided" in d.text
     assert "Technical details" in d.text
+    home = client.get("/").text
+    assert "routed to a team lead automatically" in home and eid in home
 
 
 def test_reassign_changes_metrics(client):
@@ -84,7 +86,8 @@ def test_review_queue_accept_removes_card(client):
 
 
 def test_empty_states(client):
-    assert "No enquiries yet" in client.get("/enquiries").text
+    assert "No enquiries yet" in client.get("/").text
+    assert client.get("/submit").status_code == 200
     assert "Nothing waiting for review" in client.get("/review").text
     assert "No notifications yet" in client.get("/notifications").text
     assert client.get("/enquiries/NOPE").status_code == 404

@@ -62,6 +62,15 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 1rem 0; }
 .alert-error { background: var(--error-soft); color: var(--error); border-color: #f5c9c4; }
 .alert-info { background: var(--accent-soft); color: #1f3f73; border-color: #d3dff2; }
 
+.outcomes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 20px; }
+.outcome { display: flex; flex-direction: column; }
+.outcome-value { font-size: 1.7rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.outcome-review .outcome-value { color: var(--warn); }
+.outcome-label { font-size: .88rem; }
+.outcome-sub { font-size: .8rem; color: var(--muted); }
+.outcome-note { grid-column: 1 / -1; margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--border); }
+@media (max-width: 700px) { .outcomes { grid-template-columns: 1fr 1fr; } }
+
 /* Forms */
 .submit-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
 .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
