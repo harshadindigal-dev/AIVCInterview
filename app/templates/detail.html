@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block title %}{{ e.company_name }}{% endblock %}
+{% set p = run.parsed if run and run.parsed else none %}
+{% set cls = run.classification if run else {} %}
+{% set enr = run.enrichment if run else {} %}
+{% set rt = run.routing if run else {} %}
+{% block content %}
+<div class="detail-head">
+  <div>
+    <p class="crumbs"><a href="/enquiries">Inbox</a> / {{ e.id }}</p>
+    <h1>{{ e.company_name }}</h1>
+    <p class="muted">Submitted {{ e.submitted_at | dt }} by {{ e.name }} &lt;{{ e.email }}&gt; · {{ e.industry }} · {{ e.company_size }} employees</p>
+  </div>
+  <div class="head-right">
+    {% set dt_ = e.destination_type %}
+    <span class="pill pill-lg dest-{{ dt_ or 'none' }}">
+      {% if dt_ == 'review' %}Review queue{% elif dt_ == 'archive' %}Archived{% elif dt_ == 'duplicate' %}Duplicate of {{ e.duplicate_of }}{% elif e.destination_name %}{{ e.destination_name }}{% else %}Processing{% endif %}
+    </span>
+    <span class="status status-{{ e.status }}">{{ status_labels.get(e.status, e.status) }}</span>
+  </div>
+</div>
+
+{% if done %}<div class="alert alert-ok">Saved: enquiry {{ {'accepted': 'accepted', 'reassigned': 'reassigned', 'corrected': 'reclassified'}.get(done, done) }}. The Health page reflects it.</div>{% endif %}
+{% if e.status == 'processing' %}<div class="alert alert-warn">Still processing. <a href="/enquiries/{{ e.id }}">Refresh</a></div>{% endif %}
+{% if e.duplicate_of %}
+<div class="alert alert-info">This is a resubmission of <a href="/enquiries/{{ e.duplicate_of }}">{{ e.duplicate_of }}</a> (same email, near-identical text within {{ domain.routing.dedupe_window_days }} days). It was linked and not triaged again, so no second notification went out.</div>
+{% endif %}
+{% if duplicates %}
+<div class="alert alert-info">Resubmitted {{ duplicates | length }} time{{ 's' if duplicates | length > 1 }}: {% for d in duplicates %}<a href="/enquiries/{{ d.id }}">{{ d.id }}</a>{{ ', ' if not loop.last }}{% endfor %}.</div>
+{% endif %}
+
+<div class="detail-grid">
+  <section class="card original">
+    <h2 class="card-title">Enquiry as submitted</h2>
+    <dl class="kv compact">
+      <dt>Stated urgency</dt><dd>{{ e.stated_urgency | capitalize }}</dd>
+    </dl>
+    <div class="original-text">{{ e.description | highlight(p.key_entities if p else []) }}</div>
+    {% if p and p.key_entities %}<p class="muted small">Highlighted: key entities the model extracted.</p>{% endif %}
+  </section>
+
+  <section class="card triage">
+    <h2 class="card-title">Triage</h2>
+    {% if run and run.classification_failed %}
+      <div class="alert alert-error">Classification failed after a retry: {{ cls.error }}. Sent to the review queue; nothing was dropped.</div>
+    {% elif not p and not e.duplicate_of %}
+      <p class="muted">No classification yet.</p>
+    {% endif %}
+    {% if p %}
+    <p class="summary">{{ p.summary }}</p>
+    <dl class="kv">
+      <dt>Service line</dt>
+      <dd>
+        <span class="pill pill-line">{{ domain.line_name(p.primary_service_line) }}</span>
+        {% for s in p.secondary_service_lines %}<span class="pill pill-sm">{{ domain.line_name(s) }}</span>{% endfor %}
+        {% if e.service_line != p.primary_service_line %}<div class="small warn-text">Corrected by a reviewer to {{ domain.line_name(e.service_line) }}</div>{% endif %}
+      </dd>
+      <dt>Complexity</dt>
+      <dd>
+        <span class="cx cx-{{ p.complexity }}">{{ p.complexity | capitalize }}</span>
+        {% if e.complexity != p.complexity %}<span class="small warn-text">corrected to {{ e.complexity }}</span>{% endif %}
+        <p class="rationale">{{ p.complexity_rationale }}</p>
+      </dd>
+      <dt>Urgency</dt>
+      <dd>
+        Stated <strong>{{ e.stated_urgency }}</strong> · inferred <strong>{{ p.inferred_urgency }}</strong>
+        {% if p.inferred_urgency != e.stated_urgency %}<span class="warn-marker" title="Stated and inferred urgency differ">&#9888; differs</span>{% endif %}
+      </dd>
+      <dt>Flags</dt>
+      <dd>{% for f in p.flags %}<span class="pill flag flag-{{ f }}">{{ f | replace('_', ' ') }}</span>{% else %}<span class="muted">None</span>{% endfor %}
+        {% if cls.injection_flagged_any_run and 'possible_injection' not in p.flags %}<span class="pill flag flag-possible_injection" title="Flagged by a sampled run, not the primary">possible injection (1 run)</span>{% endif %}
+      </dd>
+      <dt>Agreement</dt>
+      <dd>
+        {% set n = cls.runs | length %}
+        {% set a = cls.agreement_service_line %}
+        {% if a == n %}<span class="agree-ok">{{ n }}/{{ n }} runs agreed</span>{% else %}
+        <span class="agree-bad">{{ a }}/{{ n }} agreed: {{ cls.service_line_votes[0] }} vs {{ cls.service_line_votes[1:] | reject('equalto', cls.service_line_votes[0]) | map('default', 'failed', true) | unique | join(', ') }}</span>{% endif %}
+        <span class="muted small">· complexity {{ cls.agreement_complexity }}/{{ n }} ({{ cls.complexity_votes | map('default', 'failed', true) | join(', ') }})</span>
+      </dd>
+    </dl>
+    {% if p.missing_information %}
+    <h3 class="sub">Questions to ask the client</h3>
+    <ul class="checklist">
+      {% for q in p.missing_information %}<li><label><input type="checkbox"> {{ q }}</label></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% endif %}
+  </section>
+</div>
+
+<div class="detail-grid">
+  <section class="card">
+    <h2 class="card-title">Why it went here</h2>
+    {% if rt and rt.trace %}
+    <ol class="trace">
+      {% for s in rt.trace %}
+      <li class="{{ 'deciding' if s.deciding else ('fired' if s.fired else 'passed') }}">
+        <span class="trace-rule">{{ rule_labels.get(s.rule, s.rule) }}</span>
+        <span class="trace-result">{{ 'Decided' if s.deciding else ('Fired' if s.fired else 'No') }}</span>
+        <span class="trace-detail">{{ s.detail }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% for note in rt.notes %}<p class="small muted">Note: {{ note }}</p>{% endfor %}
+    {% if rt.cc %}<p class="small">Copied: {% for c in rt.cc %}{{ c.name }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+    {% else %}<p class="muted">No routing yet.</p>{% endif %}
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">Enrichment</h2>
+    {% if enr %}
+    <dl class="kv">
+      <dt>Existing client</dt>
+      <dd>{% if enr.existing_client %}<strong>Yes</strong> · {{ enr.crm_company_name }} (matched on {{ (enr.matched_on or '') | replace('_', ' ') }}){% else %}No{% endif %}</dd>
+      <dt>Relationship partner</dt>
+      <dd>{% if enr.relationship_partner %}{{ domain.routing.relationship_partners[enr.relationship_partner].name }}{% else %}—{% endif %}</dd>
+      <dt>Conflict flag</dt>
+      <dd>{% if enr.conflict_flag %}<span class="pill flag flag-conflict">Conflict</span> {{ enr.conflict_reason }}{% else %}None{% endif %}</dd>
+      <dt>Company size</dt>
+      <dd>Stated {{ e.company_size }} ·
+        {% if enr.recorded_headcount %}recorded {{ '{:,}'.format(enr.recorded_headcount) }} ({{ enr.recorded_size_band }})
+          {% if enr.size_check == 'mismatch' %}<span class="warn-marker">&#9888; differs</span>{% endif %}
+        {% else %}<span class="muted">no record</span>{% endif %}
+      </dd>
+      <dt>Industry</dt>
+      <dd>Stated {{ e.industry }}{% if enr.recorded_industry %} · recorded {{ enr.recorded_industry }}{% if enr.industry_check == 'mismatch' %} <span class="warn-marker">&#9888; differs</span>{% endif %}{% endif %}</dd>
+    </dl>
+    {% if enr.error %}<p class="alert alert-warn small">Enrichment error: {{ enr.error }}</p>{% endif %}
+    {% else %}<p class="muted">{{ 'Skipped (duplicate).' if e.duplicate_of else 'Not run yet.' }}</p>{% endif %}
+  </section>
+</div>
+
+{% if not e.duplicate_of and e.status != 'processing' %}
+<section class="card actions {{ 'focus' if action }}" id="actions">
+  <h2 class="card-title">Actions</h2>
+  <div class="action-row">
+    <form hx-post="/enquiries/{{ e.id }}/accept" hx-disabled-elt="find button">
+      <input type="hidden" name="context" value="detail">
+      {% if e.status == 'in_review' and suggested %}
+      <button class="btn btn-primary" {{ 'autofocus' if action == 'accept' }}>Accept suggestion: route to {{ suggested.name }}</button>
+      {% elif e.status == 'archived' %}
+      <button class="btn">Confirm archive</button>
+      {% else %}
+      <button class="btn btn-primary" {{ 'disabled' if e.status == 'accepted' }}>{{ 'Accepted' if e.status == 'accepted' else 'Accept routing' }}</button>
+      {% endif %}
+    </form>
+    <form class="inline-form" hx-post="/enquiries/{{ e.id }}/reassign" hx-disabled-elt="find button">
+      <input type="hidden" name="context" value="detail">
+      <select name="lead_key" aria-label="Reassign to" required>
+        <option value="">Reassign to…</option>
+        {% for l in leads %}<option value="{{ l.key }}">{{ l.name }} — {{ domain.line_name(l.key) }}</option>{% endfor %}
+      </select>
+      <input name="reason" placeholder="Reason (optional)">
+      <button class="btn">Reassign</button>
+    </form>
+  </div>
+  <details class="misclassified">
+    <summary>Mark misclassified</summary>
+    <form class="inline-form" hx-post="/enquiries/{{ e.id }}/misclassified" hx-disabled-elt="find button">
+      <input type="hidden" name="context" value="detail">
+      <select name="service_line" aria-label="Correct service line" required>
+        {% for id in domain.outcome_ids %}<option value="{{ id }}" {{ 'selected' if id == e.service_line }}>{{ domain.line_name(id) }}</option>{% endfor %}
+      </select>
+      <select name="complexity" aria-label="Correct complexity" required>
+        {% for c in complexities %}<option value="{{ c }}" {{ 'selected' if c == e.complexity }}>{{ c | capitalize }}</option>{% endfor %}
+      </select>
+      <input name="reason" placeholder="What did it get wrong?">
+      <button class="btn">Save correction</button>
+    </form>
+    <p class="small muted">Corrections become labelled evaluation data (scripts/export_feedback.py). Changing the service line also reroutes to that line's lead.</p>
+  </details>
+  <div class="htmx-error alert alert-error" hidden></div>
+</section>
+{% endif %}
+
+{% if feedback or notifications %}
+<div class="detail-grid">
+  <section class="card">
+    <h2 class="card-title">History</h2>
+    {% if feedback %}
+    <ul class="history">
+      {% for f in feedback %}
+      <li><span class="muted small">{{ f.created_at | dt }}</span> <strong>{{ f.action | capitalize }}</strong>
+        {% if f.action != 'accept' %}{{ f.old_value.destination_name }} → {{ f.new_value.destination_name }}{% endif %}
+        {% if f.reason %}<span class="muted">— {{ f.reason }}</span>{% endif %}
+        {% if f.source == 'seed' %}<span class="pill pill-sm">seeded demo</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted">No human actions yet.</p>{% endif %}
+  </section>
+  <section class="card">
+    <h2 class="card-title">Notifications sent</h2>
+    {% for n in notifications %}
+    <p class="small"><strong>{{ n.channel | upper }}</strong> to {{ n.recipient_name }} ({{ n.recipient_address }}){% if n.cc %}, cc {% for c in n.cc %}{{ c.name }}{{ ', ' if not loop.last }}{% endfor %}{% endif %} — {{ n.subject }}</p>
+    {% else %}<p class="muted">None{{ ' (archived)' if e.status == 'archived' }}.</p>{% endfor %}
+  </section>
+</div>
+{% endif %}
+
+{% if run %}
+<details class="card tech">
+  <summary>Technical details</summary>
+  <dl class="kv">
+    <dt>Prompt version</dt><dd><code>{{ run.prompt_version }}</code></dd>
+    <dt>Model requested</dt><dd><code>{{ run.model }}</code></dd>
+    <dt>Model that answered</dt><dd><code>{{ run.model_used or '—' }}</code>{% if run.model_used and run.model_used != run.model %} <span class="warn-marker">fallback model answered</span>{% endif %}</dd>
+    <dt>Provider</dt><dd>{{ run.provider or '—' }}</dd>
+    <dt>Latency</dt><dd>{% for k, v in run.latency_ms.items() %}{{ k }} {{ v | ms }}{{ ' · ' if not loop.last }}{% endfor %}</dd>
+    <dt>Tokens</dt><dd>{{ '{:,}'.format(run.input_tokens) }} in · {{ '{:,}'.format(run.output_tokens) }} out (all runs)</dd>
+    <dt>Cost</dt><dd>{{ run.cost_usd | money(4) }} (reported by OpenRouter)</dd>
+    <dt>Audit row</dt><dd>#{{ run.id }} at {{ run.created_at | dt }}</dd>
+  </dl>
+  {% for r in cls.runs or [] %}
+  <h3 class="sub">Run {{ r.index + 1 }}{{ ' (primary)' if r.index == 0 }} · temperature {{ r.temperature if r.temperature is not none else 'provider default' }} · {{ 'ok' if r.ok else 'failed' }}</h3>
+  {% for a in r.attempts %}
+    {% if a.error %}<p class="small warn-text">Attempt {{ a.attempt }}: {{ a.error }}</p>{% endif %}
+    {% if a.response %}<p class="small muted">Attempt {{ a.attempt }} · {{ a.response.provider }} · {{ a.response.model_used }} · {{ a.response.latency_ms | ms }} · {{ a.response.input_tokens }}/{{ a.response.output_tokens }} tokens · {{ a.response.cost_usd | money(5) }}</p>
+    <pre class="json">{{ a.response.content }}</pre>{% endif %}
+  {% endfor %}
+  {% endfor %}
+  <h3 class="sub">Routing decision</h3>
+  <pre class="json">{{ rt | tojson_pretty }}</pre>
+</details>
+{% endif %}
+
+<script>
+  document.body.addEventListener('htmx:responseError', function (evt) {
+    const box = document.querySelector('.htmx-error');
+    if (box) { box.hidden = false; box.textContent = 'That action failed (' + evt.detail.xhr.status + '). Nothing was changed; please try again.'; }
+  });
+  {% if action %}document.getElementById('actions')?.scrollIntoView({block: 'center'});{% endif %}
+</script>
+{% endblock %}

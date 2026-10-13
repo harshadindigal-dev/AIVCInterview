@@ -1,0 +1,21 @@
+{# args: cm (labels, matrix), names (callable or none) #}
+{% set labels = cm.labels %}
+{% set used = [] %}
+{% for g in labels %}{% for q in labels %}{% if cm.matrix.get(g, {}).get(q, 0) and g not in used %}{% set _ = used.append(g) %}{% endif %}{% if cm.matrix.get(g, {}).get(q, 0) and q not in used %}{% set _ = used.append(q) %}{% endif %}{% endfor %}{% endfor %}
+{% set shown = labels | select('in', used) | list %}
+<div class="table-wrap">
+<table class="confusion">
+  <thead><tr><th class="corner">gold ↓ / predicted →</th>{% for q in shown %}<th>{{ q }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for g in shown %}
+  {% set row = cm.matrix.get(g, {}) %}
+  {% set rowmax = (row.values() | max) if row else 0 %}
+  <tr><th>{{ g }}</th>
+    {% for q in shown %}{% set v = row.get(q, 0) %}
+    <td class="{{ 'diag' if g == q else ('off' if v else '') }}" style="--a: {{ (v / rowmax) if rowmax else 0 }}">{{ v if v else '' }}</td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>

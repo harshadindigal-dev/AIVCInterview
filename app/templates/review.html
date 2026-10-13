@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Review queue{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Review queue</h1>
+  <p class="muted">Enquiries the system would not route on its own. Each card says why.</p>
+</div>
+<div class="review-list">
+{% for item in items %}
+{% set e = item.e %}
+<article class="card review-card" id="card-{{ e.id }}">
+  <div class="review-reasons">
+    {% for r in e.review_reasons %}<span class="reason">{{ r }}</span>{% endfor %}
+  </div>
+  <div class="review-body">
+    <div>
+      <h3><a href="/enquiries/{{ e.id }}">{{ e.company_name }}</a> <span class="muted small">{{ e.id }} · {{ e.submitted_at.strftime('%d %b %H:%M') }}</span></h3>
+      <p>{{ e.summary or (e.description | truncate(220)) }}</p>
+      <p class="small muted">
+        Suggested: {{ domain.line_name(e.service_line) if e.service_line else 'no classification' }}{% if e.complexity %} · {{ e.complexity }}{% endif %}
+        {% for f in e.flags %}<span class="pill pill-sm flag flag-{{ f }}">{{ f | replace('_', ' ') }}</span>{% endfor %}
+      </p>
+    </div>
+    <div class="review-actions">
+      {% if item.suggested %}
+      <form hx-post="/enquiries/{{ e.id }}/accept" hx-target="#card-{{ e.id }}" hx-swap="delete" hx-disabled-elt="find button">
+        <input type="hidden" name="context" value="review">
+        <button class="btn btn-primary">Accept: {{ item.suggested.name }}</button>
+      </form>
+      {% else %}
+      <form hx-post="/enquiries/{{ e.id }}/accept" hx-target="#card-{{ e.id }}" hx-swap="delete" hx-disabled-elt="find button">
+        <input type="hidden" name="context" value="review">
+        <button class="btn btn-primary" title="Mark handled without routing to a team lead (e.g. reply with a polite referral)">Close: no team lead needed</button>
+      </form>
+      {% endif %}
+      <form class="inline-form" hx-post="/enquiries/{{ e.id }}/reassign" hx-target="#card-{{ e.id }}" hx-swap="delete" hx-disabled-elt="find button">
+        <input type="hidden" name="context" value="review">
+        <select name="lead_key" aria-label="Reassign to" required>
+          <option value="">Route to…</option>
+          {% for l in leads %}<option value="{{ l.key }}">{{ l.name }} — {{ domain.line_name(l.key) }}</option>{% endfor %}
+        </select>
+        <input name="reason" placeholder="Reason">
+        <button class="btn">Route</button>
+      </form>
+    </div>
+  </div>
+</article>
+{% endfor %}
+</div>
+<div id="review-empty" class="{{ 'empty' if not items }}">
+  {% if not items %}<p class="empty-title">Nothing waiting for review.</p><p>Flagged enquiries will appear here.</p>{% endif %}
+</div>
+<script>
+  document.body.addEventListener('htmx:responseError', function (evt) {
+    alert('That action failed (' + evt.detail.xhr.status + '). Nothing was changed.');
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,59 @@
+<form id="enquiry-form" class="card form" hx-post="/submit" hx-target="#submit-area" hx-swap="innerHTML"
+      hx-disabled-elt="find button[type=submit]" hx-indicator="#submit-spinner">
+  <div class="form-row">
+    <label for="sample">Load sample</label>
+    <select id="sample" onchange="loadSample(this)">
+      <option value="">Choose a sample enquiry…</option>
+      {% for group, items in samples.items() %}
+      <optgroup label="{{ group }}">
+        {% for s in items %}<option value="{{ s.id }}">{{ s.id }} · {{ s.label }}</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+  </div>
+  <hr>
+  {% if errors %}<div class="alert alert-error" role="alert">Please fix the highlighted fields.</div>{% endif %}
+  <div class="grid-2">
+    {% for field, label in [("name","Your name"),("email","Email"),("company_name","Company")] %}
+    <div class="form-row {{ 'has-error' if errors.get(field) }}">
+      <label for="{{ field }}">{{ label }}</label>
+      <input id="{{ field }}" name="{{ field }}" value="{{ values.get(field, '') }}" {{ 'type=email' if field == 'email' }} autocomplete="off">
+      {% if errors.get(field) %}<span class="field-error">{{ errors[field] }}</span>{% endif %}
+    </div>
+    {% endfor %}
+    <div class="form-row {{ 'has-error' if errors.get('industry') }}">
+      <label for="industry">Industry</label>
+      <select id="industry" name="industry">
+        <option value="">Select…</option>
+        {% for i in industries %}<option {{ 'selected' if values.get('industry') == i }}>{{ i }}</option>{% endfor %}
+      </select>
+      {% if errors.get('industry') %}<span class="field-error">{{ errors['industry'] }}</span>{% endif %}
+    </div>
+    <div class="form-row {{ 'has-error' if errors.get('company_size') }}">
+      <label for="company_size">Company size (employees)</label>
+      <select id="company_size" name="company_size">
+        <option value="">Select…</option>
+        {% for i in sizes %}<option {{ 'selected' if values.get('company_size') == i }}>{{ i }}</option>{% endfor %}
+      </select>
+      {% if errors.get('company_size') %}<span class="field-error">{{ errors['company_size'] }}</span>{% endif %}
+    </div>
+    <div class="form-row {{ 'has-error' if errors.get('stated_urgency') }}">
+      <label for="stated_urgency">Urgency</label>
+      <select id="stated_urgency" name="stated_urgency">
+        <option value="">Select…</option>
+        {% for i in urgencies %}<option value="{{ i }}" {{ 'selected' if values.get('stated_urgency') == i }}>{{ i | capitalize }}</option>{% endfor %}
+      </select>
+      {% if errors.get('stated_urgency') %}<span class="field-error">{{ errors['stated_urgency'] }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="form-row {{ 'has-error' if errors.get('description') }}">
+    <label for="description">What do you need help with?</label>
+    <textarea id="description" name="description" rows="9" maxlength="5000">{{ values.get('description', '') }}</textarea>
+    {% if errors.get('description') %}<span class="field-error">{{ errors['description'] }}</span>{% endif %}
+    <span class="hint">10–5,000 characters.</span>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Submit enquiry</button>
+    <span id="submit-spinner" class="htmx-indicator muted"><span class="spinner"></span> Submitting…</span>
+  </div>
+</form>

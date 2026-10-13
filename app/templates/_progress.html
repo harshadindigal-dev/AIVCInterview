@@ -1,0 +1,15 @@
+<div class="card progress" hx-get="/enquiries/{{ enquiry_id }}/progress" hx-trigger="load delay:700ms" hx-swap="outerHTML">
+  <h2>Processing {{ enquiry_id }}</h2>
+  <ol class="steps">
+    {% for st in steps %}
+    {% set state = progress.steps.get(st, 'pending') %}
+    <li class="step step-{{ state }}">
+      <span class="step-dot">{% if state == 'running' %}<span class="spinner"></span>{% endif %}</span>
+      <span class="step-name">{{ st | capitalize }}</span>
+      <span class="step-state">{{ {'done': 'Done', 'running': 'Running…', 'pending': 'Waiting', 'skipped': 'Skipped (duplicate)', 'failed': 'Failed — sending to review'}[state] }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  {% for n in progress.notes %}<p class="alert alert-warn small">{{ n }}</p>{% endfor %}
+  <p class="muted small">You'll be taken to the enquiry when routing is complete.</p>
+</div>

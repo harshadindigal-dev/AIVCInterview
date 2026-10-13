@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Notifications log{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Notifications log</h1>
+  <p class="muted">What would have been sent to team leads and the review channel. No real email or Slack is sent.{% if total > rows|length %} Showing the latest {{ rows|length }} of {{ total }}.{% endif %}</p>
+</div>
+{% for n in rows %}
+<article class="card message">
+  <header class="message-head">
+    <span class="pill pill-sm channel-{{ n.channel }}">{{ n.channel | upper }}</span>
+    <div>
+      <div><strong>To:</strong> {{ n.recipient_name }} &lt;{{ n.recipient_address }}&gt;</div>
+      {% if n.cc %}<div><strong>Cc:</strong> {% for c in n.cc %}{{ c.name }} &lt;{{ c.email }}&gt;{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+      <div><strong>Subject:</strong> {{ n.subject }}</div>
+    </div>
+    <div class="message-meta muted small">{{ n.created_at | dt }}<br><a href="/enquiries/{{ n.enquiry_id }}">{{ n.enquiry_id }}</a></div>
+  </header>
+  <pre class="message-body">{{ n.body }}</pre>
+</article>
+{% else %}
+<div class="empty"><p class="empty-title">No notifications yet.</p><p>Routed enquiries and review items create one here.</p></div>
+{% endfor %}
+{% endblock %}

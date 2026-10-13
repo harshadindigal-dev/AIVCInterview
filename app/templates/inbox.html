@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Inbox{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Inbox</h1>
+  <p class="muted">Every enquiry, newest first.</p>
+</div>
+<form class="filters" hx-get="/enquiries" hx-target="#inbox-table" hx-trigger="change" hx-push-url="true" hx-indicator="#inbox-spinner">
+  <select name="service_line" aria-label="Service line">
+    <option value="">All service lines</option>
+    {% for id in domain.outcome_ids %}<option value="{{ id }}" {{ 'selected' if filters.service_line == id }}>{{ domain.line_name(id) }}</option>{% endfor %}
+  </select>
+  <select name="status" aria-label="Status">
+    <option value="">All statuses</option>
+    {% for k, v in status_labels.items() if k != 'processing' %}<option value="{{ k }}" {{ 'selected' if filters.status == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <select name="destination" aria-label="Destination">
+    <option value="">All destinations</option>
+    {% for d in destinations %}<option {{ 'selected' if filters.destination == d }}>{{ d }}</option>{% endfor %}
+  </select>
+  <a href="/enquiries" class="small">Clear</a>
+  <span id="inbox-spinner" class="htmx-indicator"><span class="spinner"></span></span>
+</form>
+<div id="inbox-table">{% include "_inbox_table.html" %}</div>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Health{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Health</h1>
+  <p class="muted">Day-one production metrics, computed from the database on every load. Also at <a href="/metrics.json">/metrics.json</a>.
+  {% if m.feedback_seeded %}{{ m.feedback_seeded }} of the feedback actions were seeded at first start (labelled "seeded demo" on each enquiry).{% endif %}</p>
+</div>
+{% if not m.triaged %}
+<div class="empty"><p class="empty-title">No enquiries processed yet.</p><p>Metrics appear once enquiries have been triaged.</p></div>
+{% else %}
+<div class="tiles">
+  <div class="tile tile-key"><span class="tile-label">Reassignment rate</span><span class="tile-value">{{ m.reassignment_rate | pct(1) }}</span><span class="tile-sub">routed enquiries a human changed</span></div>
+  <div class="tile"><span class="tile-label">Review-queue rate</span><span class="tile-value">{{ m.review_queue_rate | pct(1) }}</span><span class="tile-sub">{{ m.open_in_review }} open now</span></div>
+  <div class="tile"><span class="tile-label">Classification failures</span><span class="tile-value">{{ m.classification_failure_rate | pct(1) }}</span><span class="tile-sub">of pipeline runs</span></div>
+  <div class="tile"><span class="tile-label">Classify latency</span><span class="tile-value">{{ m.latency_classify_p50_ms | ms }}</span><span class="tile-sub">p50 · p95 {{ m.latency_classify_p95_ms | ms }}</span></div>
+  <div class="tile"><span class="tile-label">Enquiries</span><span class="tile-value">{{ m.triaged }}</span><span class="tile-sub">triaged · {{ m.duplicates }} duplicates linked</span></div>
+  <div class="tile"><span class="tile-label">Mean cost</span><span class="tile-value">{{ m.mean_cost_usd | money(3) }}</span><span class="tile-sub">per enquiry</span></div>
+</div>
+<div class="detail-grid">
+  <section class="card">
+    <h2 class="card-title">Reassignment by predicted service line</h2>
+    <div class="table-wrap"><table class="table compact-table">
+      <thead><tr><th>Predicted line</th><th>Triaged</th><th>Changed by a human</th><th>Rate</th></tr></thead>
+      <tbody>{% for r in m.reassignment_by_line %}<tr><td>{{ r.name }}</td><td>{{ r.total }}</td><td>{{ r.changed }}</td><td>{{ r.rate | pct }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <p class="small muted">A rising rate for one line is the first sign of taxonomy drift or a prompt regression.</p>
+  </section>
+  <section class="card">
+    <h2 class="card-title">Why enquiries went to review</h2>
+    {% if m.review_reasons %}
+    <div class="table-wrap"><table class="table compact-table"><tbody>
+      {% for reason, n in m.review_reasons %}<tr><td>{{ reason }}</td><td>{{ n }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="muted">Nothing has gone to review.</p>{% endif %}
+    <dl class="kv compact small">
+      <dt>Run agreement</dt><dd>{% for k, v in m.agreement_distribution.items() %}{{ k }}: {{ v }}{{ ' · ' if not loop.last }}{% endfor %}</dd>
+      <dt>Providers</dt><dd>{% for k, v in m.providers.items() %}{{ k }} ({{ v }}){{ ', ' if not loop.last }}{% endfor %}</dd>
+      <dt>Models answered</dt><dd>{% for k, v in m.models_used.items() %}{{ k }} ({{ v }}){{ ', ' if not loop.last }}{% endfor %}</dd>
+      <dt>Feedback</dt><dd>{% for k, v in m.feedback_counts.items() %}{{ k }} {{ v }}{{ ' · ' if not loop.last }}{% else %}none{% endfor %}</dd>
+    </dl>
+  </section>
+</div>
+<div class="detail-grid">
+  {% for label, dist in [("Last 7 days", m.distribution_7d), ("Last 30 days", m.distribution_30d)] %}
+  <section class="card">
+    <h2 class="card-title">Service-line mix: {{ label }}</h2>
+    {% if dist %}
+    <ul class="bars">
+      {% for d in dist %}<li><span class="bar-label">{{ d.name }}</span><span class="bar"><span style="width: {{ (d.share or 0) * 100 }}%"></span></span><span class="bar-value">{{ d.count }}</span></li>{% endfor %}
+    </ul>
+    {% else %}<p class="muted">No enquiries in this window.</p>{% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

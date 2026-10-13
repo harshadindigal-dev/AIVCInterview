@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Submit{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>New enquiry</h1>
+  <p class="muted">The same fields as the public web form. Submitting runs the full pipeline with a live model.</p>
+</div>
+<div class="submit-layout">
+  <div id="submit-area">{% include "_submit_form.html" %}</div>
+  <aside class="card side-note">
+    <h3>Try the hard cases</h3>
+    <p>Use <strong>Load sample</strong> to fill the form from the labelled dataset. Worth trying:</p>
+    <ul>
+      <li><strong>Prompt injection</strong>: text that tells the system to route to the CEO.</li>
+      <li><strong>Vague</strong>: "need help with compliance stuff".</li>
+      <li><strong>Urgency mismatch</strong>: stated low, regulator deadline next Friday.</li>
+      <li><strong>Conflict flag</strong>: the firm acts for the other side.</li>
+      <li><strong>Duplicate</strong>: submit any sample twice.</li>
+    </ul>
+    <p class="muted small">Classification takes 5–15 seconds: three model runs are compared for agreement.</p>
+  </aside>
+</div>
+<script>
+  const SAMPLES = {{ samples | tojson }};
+  function loadSample(sel) {
+    const id = sel.value; if (!id) return;
+    const all = [...SAMPLES["Clear cases"], ...SAMPLES["Hard cases"]];
+    const s = all.find(x => x.id === id); if (!s) return;
+    const f = document.getElementById('enquiry-form');
+    for (const k of ["name","email","company_name","industry","company_size","stated_urgency","description"]) {
+      if (f.elements[k]) f.elements[k].value = s[k];
+    }
+  }
+</script>
+{% endblock %}

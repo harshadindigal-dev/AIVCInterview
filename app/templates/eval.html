@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Evaluation{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Evaluation</h1>
+  <p class="muted">The full pipeline run over the 50 hand-labelled enquiries in <code>data/synthetic_enquiries.jsonl</code>, once per model. Produced by <code>make eval</code>; costs are as reported by OpenRouter.</p>
+</div>
+{% if not results %}
+<div class="empty"><p class="empty-title">No evaluation results yet.</p><p>Run <code>make eval</code> to produce <code>eval_results/*.json</code>.</p></div>
+{% else %}
+{% set m = selected.metrics %}
+<div class="model-picker">
+  <span class="muted">Showing</span>
+  {% for r in results %}
+  <a href="/eval?model={{ r.model | urlencode }}" class="pill {{ 'pill-active' if r.model == selected.model }}">{{ r.model }}</a>
+  {% endfor %}
+  <span class="muted small">prompt {{ selected.prompt_version }} · run {{ selected.run_at | dt }}</span>
+</div>
+
+<div class="tiles">
+  <div class="tile tile-key"><span class="tile-label">Review recall</span><span class="tile-value">{{ m.review_recall | pct }}</span><span class="tile-sub">{{ m.review_recall_n - m.missed_reviews | length }}/{{ m.review_recall_n }} that needed a human got one</span></div>
+  <div class="tile"><span class="tile-label">Auto-route precision</span><span class="tile-value">{{ m.auto_route_precision | pct }}</span><span class="tile-sub">of {{ m.auto_route_n }} routed without review</span></div>
+  <div class="tile"><span class="tile-label">Service-line accuracy</span><span class="tile-value">{{ m.service_line_accuracy | pct }}</span><span class="tile-sub">n={{ m.service_line_n }}</span></div>
+  <div class="tile"><span class="tile-label">Complexity accuracy</span><span class="tile-value">{{ m.complexity_accuracy | pct }}</span><span class="tile-sub">{{ m.complexity_errors.adjacent }} one level off · {{ m.complexity_errors.two_levels }} two levels off</span></div>
+  <div class="tile"><span class="tile-label">Review-queue rate</span><span class="tile-value">{{ m.review_rate | pct }}</span><span class="tile-sub">gold: {{ (m.review_recall_n / m.n_triaged) | pct }}</span></div>
+  <div class="tile"><span class="tile-label">Cost per 1,000</span><span class="tile-value">{{ m.cost_per_1000_usd | money }}</span><span class="tile-sub">p50 {{ m.latency_ms_p50 | ms }} · 3 runs each</span></div>
+</div>
+
+<section class="card">
+  <h2 class="card-title">Model comparison</h2>
+  <div class="table-wrap">
+  <table class="table compare">
+    <thead><tr><th>Model</th><th>Review recall</th><th>Auto-route precision</th><th>Routing acc.</th><th>Service line</th><th>Complexity</th><th>Review rate</th><th>Injection</th><th>3/3 agreement</th><th>Cost / 1,000</th><th>p50 latency</th></tr></thead>
+    <tbody>
+    {% for r in results %}{% set x = r.metrics %}
+    <tr class="{{ 'selected' if r.model == selected.model }}">
+      <td><a href="/eval?model={{ r.model | urlencode }}">{{ r.model }}</a>{% if r.model == model %} <span class="pill pill-sm">live</span>{% endif %}</td>
+      <td><strong>{{ x.review_recall | pct }}</strong></td>
+      <td>{{ x.auto_route_precision | pct }}</td>
+      <td>{{ x.routing_accuracy | pct }}</td>
+      <td>{{ x.service_line_accuracy | pct }}</td>
+      <td>{{ x.complexity_accuracy | pct }}</td>
+      <td>{{ x.review_rate | pct }}</td>
+      <td>{{ 'flagged, not followed' if x.injection.all_flagged and x.injection.none_followed else ('flagged' if x.injection.all_flagged else 'MISSED') }}</td>
+      <td>{{ x.agreement_distribution.get('3/3', 0) }}/{{ x.n_triaged - x.classification_failures }}</td>
+      <td>{{ x.cost_per_1000_usd | money }}</td>
+      <td>{{ x.latency_ms_p50 | ms }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="small muted">Review recall is the metric that matters most: a missed review is a silent misroute. Routing accuracy counts every record, including archive and duplicate outcomes.</p>
+</section>
+
+{% if notes %}
+<section class="card prose">
+  <h2 class="card-title">What this tells us</h2>
+  {{ notes }}
+</section>
+{% endif %}
+
+<div class="matrix-grid">
+  <section class="card">
+    <h2 class="card-title">Service line: confusion matrix</h2>
+    {% with cm = m.service_line_confusion %}{% include "_confusion.html" %}{% endwith %}
+    <p class="small muted">Rows are gold labels, columns are predictions. Vague cases with no gold service line are excluded.</p>
+  </section>
+  <section class="card">
+    <h2 class="card-title">Complexity: confusion matrix</h2>
+    {% with cm = m.complexity_confusion %}{% include "_confusion.html" %}{% endwith %}
+    <dl class="kv compact small">
+      <dt>Urgency accuracy</dt><dd>{{ m.urgency_accuracy | pct }}</dd>
+      <dt>Urgency mismatches flagged</dt><dd>{{ m.urgency_mismatch_detected }}</dd>
+      <dt>Classification failures</dt><dd>{{ m.classification_failures }}</dd>
+      <dt>Providers</dt><dd>{% for k, v in m.providers.items() %}{{ k }} ({{ v }}){{ ', ' if not loop.last }}{% endfor %}</dd>
+      <dt>Temperature</dt><dd>{{ '0 / 0.7 / 0.7' if selected.temperature_supported else 'not accepted by this model: 3 samples at provider default' }}</dd>
+    </dl>
+  </section>
+</div>
+
+<section class="card">
+  <h2 class="card-title">Failures: {{ selected.failures | length }} of {{ m.n_records }} records</h2>
+  {% if selected.failures %}
+  <div class="table-wrap">
+  <table class="table failures">
+    <thead><tr><th>Case</th><th>Type</th><th>Wrong</th><th>Gold</th><th>Predicted</th><th>Model's rationale / summary</th></tr></thead>
+    <tbody>
+    {% for f in selected.failures %}
+    <tr>
+      <td class="nowrap">{% if f.id in existing %}<a href="/enquiries/{{ f.id }}">{{ f.id }}</a>{% else %}{{ f.id }}{% endif %}<div class="muted small">{{ f.company_name }}</div></td>
+      <td class="small">{{ case_labels.get(f.case_type, f.case_type) }}</td>
+      <td>{% for k in f.errors %}<span class="pill pill-sm err">{{ k | replace('_', ' ') }}</span>{% endfor %}</td>
+      <td class="small">{{ f.gold.service_line or '—' }} · {{ f.gold.complexity or '—' }}<br><span class="muted">{{ f.gold.destination }}</span></td>
+      <td class="small">{{ f.pred.service_line or 'failed' }} · {{ f.pred.complexity or '—' }}<br><span class="muted">{{ f.pred.destination }}</span>{% if f.pred.agreement is not none and f.pred.agreement < 3 %}<br><span class="warn-text">{{ f.pred.agreement }}/3 agreed</span>{% endif %}</td>
+      <td class="small">{{ f.rationale }}<div class="muted">{{ f.summary }}</div></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="small muted">Links open the seeded enquiry, which was classified by the live model ({{ model }}); for other models the detail page will show that model's result, not this one.</p>
+  {% else %}<div class="empty"><p class="empty-title">No failures for this model.</p></div>{% endif %}
+</section>
+
+<section class="card">
+  <h2 class="card-title">Routing accuracy by case type</h2>
+  <div class="table-wrap"><table class="table compact-table">
+    <thead><tr><th>Case type</th><th>Correct</th></tr></thead>
+    <tbody>{% for k, v in m.by_case_type.items() | sort %}<tr><td>{{ case_labels.get(k, k) }}</td><td>{{ v.routing_correct }}/{{ v.n }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

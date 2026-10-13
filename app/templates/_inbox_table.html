@@ -1,0 +1,30 @@
+{% if rows %}
+<div class="table-wrap">
+<table class="table">
+  <thead><tr><th>Received</th><th>Company</th><th>Summary</th><th>Service line</th><th>Complexity</th><th>Urgency</th><th>Destination</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for e in rows %}
+  <tr class="row-link" onclick="location.href='/enquiries/{{ e.id }}'">
+    <td class="nowrap muted">{{ e.submitted_at.strftime('%d %b %H:%M') }}</td>
+    <td><a href="/enquiries/{{ e.id }}">{{ e.company_name }}</a><div class="muted small">{{ e.id }}</div></td>
+    <td class="summary-cell">{{ (e.summary or ('Duplicate of ' ~ e.duplicate_of if e.duplicate_of else '—')) | truncate(110) }}</td>
+    <td>{{ domain.line_name(e.service_line) if e.service_line else '—' }}</td>
+    <td>{% if e.complexity %}<span class="cx cx-{{ e.complexity }}">{{ e.complexity }}</span>{% else %}—{% endif %}</td>
+    <td class="nowrap">{{ e.stated_urgency }}{% if e.inferred_urgency and e.inferred_urgency != e.stated_urgency %} → {{ e.inferred_urgency }} <span class="warn-marker" title="Stated and inferred differ">&#9888;</span>{% endif %}</td>
+    <td>{{ e.destination_name or '—' }}</td>
+    <td><span class="status status-{{ e.status }}">{{ status_labels.get(e.status, e.status) }}</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="muted small">{{ rows | length }} enquir{{ 'y' if rows | length == 1 else 'ies' }}.</p>
+{% else %}
+<div class="empty">
+  {% if filters.service_line or filters.status or filters.destination %}
+  <p class="empty-title">No enquiries match these filters.</p><p><a href="/enquiries">Clear filters</a></p>
+  {% else %}
+  <p class="empty-title">No enquiries yet.</p><p><a href="/">Submit one</a>, or wait for the seed data to finish loading.</p>
+  {% endif %}
+</div>
+{% endif %}

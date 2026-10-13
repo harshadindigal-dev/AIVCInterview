@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Intake Triage{% endblock %} · Intake Triage</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/">Intake Triage</a>
+    <nav class="nav">
+      <a href="/" class="{{ 'active' if nav == 'submit' }}">Submit</a>
+      <a href="/enquiries" class="{{ 'active' if nav == 'inbox' }}">Inbox</a>
+      <a href="/review" class="{{ 'active' if nav == 'review' }}">Review queue <span id="review-count" class="badge">{{ review_count }}</span></a>
+      <a href="/eval" class="{{ 'active' if nav == 'eval' }}">Evaluation</a>
+      <a href="/notifications" class="{{ 'active' if nav == 'notifications' }}">Notifications log</a>
+      <a href="/metrics" class="{{ 'active' if nav == 'metrics' }}">Health</a>
+    </nav>
+    <span class="mode" title="Every enquiry is classified by this model via OpenRouter">{{ mode }} · {{ model }}</span>
+  </div>
+</header>
+{% if seed.state == 'running' %}
+<div class="banner" hx-get="{{ request.url.path }}" hx-trigger="every 5s" hx-select=".banner" hx-swap="outerHTML">
+  Seeding the demo data with live classification: {{ seed.done }} of {{ seed.total }} enquiries processed. Pages fill in as it runs.
+</div>
+{% elif seed.state == 'error' %}
+<div class="banner banner-error">Seeding stopped: {{ seed.error }}. The app still works; check the logs.</div>
+{% endif %}
+<main class="page">
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>
