@@ -12,6 +12,11 @@ from typing import Any
 from app.config import Domain
 
 
+# Rules the router knows how to evaluate. routing.yaml chooses their order.
+KNOWN_RULES = {"hard_stop_review", "archive_not_an_enquiry", "existing_client", "review_flags",
+               "complex_high_urgency", "default"}
+
+
 @dataclass
 class ClassificationFacts:
     """What routing needs from classification (built from ClassificationOutcome,
@@ -43,6 +48,28 @@ class ClassificationFacts:
             agreement_text=o.disagreement_text() if o.ok else "classification failed",
             error=o.error,
         )
+
+
+def facts_from_audit(classification: dict[str, Any], parsed: dict[str, Any] | None) -> ClassificationFacts:
+    """Rebuild routing inputs from a stored PipelineRun (used to replay routing under a draft config)."""
+    from app.pipeline.classify import agreement_text
+
+    p = parsed or {}
+    votes = classification.get("service_line_votes") or []
+    ok = bool(classification.get("ok")) and parsed is not None
+    agree = classification.get("agreement_service_line") or 0
+    return ClassificationFacts(
+        ok=ok,
+        primary_service_line=p.get("primary_service_line"),
+        complexity=p.get("complexity"),
+        inferred_urgency=p.get("inferred_urgency"),
+        flags=list(p.get("flags") or []),
+        injection_flagged_any_run=bool(classification.get("injection_flagged_any_run")),
+        agreement_service_line=agree,
+        n_runs=len(votes) or 3,
+        agreement_text=agreement_text(votes, agree) if ok and votes else "classification failed",
+        error=classification.get("error"),
+    )
 
 
 @dataclass

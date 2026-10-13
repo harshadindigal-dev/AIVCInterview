@@ -38,6 +38,8 @@ flowchart LR
    - **Notify:** a rendered email or Slack message with Accept and Reassign links, written to a log.
    - **Audit:** one row per run, holding the enrichment, prompt version, requested and answering model, provider, all raw outputs, the parsed result, the trace, the destination, latency per step, tokens and reported cost.
 
+**Configuration:** `config/*.yaml` is the business logic, viewable and editable at `/config`. Every edit is validated, previewed against all stored enquiries (an offline replay of routing), applied without a restart, and versioned. Every run records the hash of the prompt and config that produced it.
+
 `run_pipeline()` is one callable. The demo runs it in a background thread; a job queue could call it unchanged.
 
 ## Model and API choices

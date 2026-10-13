@@ -19,6 +19,7 @@ from markupsafe import Markup, escape
 from pydantic import ValidationError
 from sqlmodel import Session, func, select
 
+from app import configstore
 from app import feedback as fb
 from app import metrics as metrics_mod
 from app import seed as seed_mod
@@ -488,7 +489,7 @@ def eval_page(request: Request, model: str = ""):
     with session(request) as s:
         existing = set(s.exec(select(Enquiry.id)).all())
     return render(request, "eval.html", nav="eval", results=results, selected=selected, notes=notes,
-                  existing=existing)
+                  existing=existing, live_prompt_hash=configstore.prompt_hash(get_domain()))
 
 
 # -- notifications / metrics ------------------------------------------------------------------
@@ -512,6 +513,105 @@ def metrics_page(request: Request):
 def metrics_json(request: Request):
     with session(request) as s:
         return JSONResponse(metrics_mod.compute(s, get_domain()))
+
+
+# -- configuration -----------------------------------------------------------------------
+
+CONFIG_TABS = [("overview", "How it decides"), ("routing", "Routing & team leads"), ("taxonomy", "Service lines"),
+               ("rubric", "Complexity & urgency"), ("prompt", "System prompt"), ("crm", "CRM data"),
+               ("history", "Change history")]
+
+
+def reload_domain(app_: FastAPI) -> None:
+    """Pick up edited config in the running app: new domain, rebuilt enrichment mocks."""
+    get_domain.cache_clear()
+    d = get_domain()
+    deps = app_.state.deps
+    deps.domain, deps.crm, deps.company_data = d, MockCRMClient(d.crm), MockCompanyData(d.crm)
+
+
+@app.get("/config", response_class=HTMLResponse)
+def config_page(request: Request, tab: str = "overview", saved: int | None = None):
+    from app.llm.prompts import build_system_prompt, build_user_message
+    from app.schemas import FLAGS, triage_json_schema
+
+    domain = get_domain()
+    if tab not in dict(CONFIG_TABS):
+        tab = "overview"
+    with session(request) as s:
+        hist = configstore.history(s) if tab == "history" else []
+        line_counts = {}
+        for e in s.exec(select(Enquiry)).all():
+            line_counts[e.service_line] = line_counts.get(e.service_line, 0) + 1
+    example_user = build_user_message(name="<contact name>", email="<email>", company_name="<company>",
+                                      industry="<industry>", company_size="<size band>",
+                                      stated_urgency="<low|normal|high>", description="<description as submitted>")
+    raw = {k: configstore.read_text(k) for k in configstore.FILES}
+    results = load_results()
+    stale_evals = [r["model"] for r in results if r.get("prompt_hash") != configstore.prompt_hash(domain)]
+    return render(request, "config.html", nav="config", tab=tab, tabs=CONFIG_TABS, saved=saved, history=hist,
+                  files=configstore.FILES, raw=raw, writable=configstore.is_writable(), flags=FLAGS,
+                  system_prompt=build_system_prompt(domain), example_user=example_user,
+                  schema=triage_json_schema(domain.service_line_ids, domain.outcome_ids),
+                  prompt_hash=configstore.prompt_hash(domain), config_hash=configstore.config_hash(domain),
+                  prompt_version=PROMPT_VERSION, line_counts=line_counts, stale_evals=stale_evals,
+                  diff=lambda a, b: configstore._diff(a, b, "before", "after"))
+
+
+async def _proposed_text(request: Request) -> tuple[str, str]:
+    form = dict(await request.form())
+    name = str(form.get("name", ""))
+    if name not in configstore.FILES:
+        raise HTTPException(400, "Unknown config file")
+    if form.get("mode") == "form":
+        builder = {"routing": configstore.routing_from_form, "taxonomy": configstore.taxonomy_from_form,
+                   "rubric": configstore.rubric_from_form}.get(name)
+        if builder is None:
+            raise HTTPException(400, "No form editor for this file")
+        return name, builder(form)
+    return name, str(form.get("text", ""))
+
+
+@app.post("/config/preview", response_class=HTMLResponse)
+async def config_preview(request: Request):
+    name, text = await _proposed_text(request)
+    with session(request) as s:
+        pv = configstore.preview(s, get_domain(), name, text)
+    return render(request, "_config_preview.html", pv=pv, files=configstore.FILES,
+                  writable=configstore.is_writable())
+
+
+@app.post("/config/apply")
+async def config_apply(request: Request):
+    form = dict(await request.form())
+    name, text = str(form.get("name", "")), str(form.get("text", ""))
+    if name not in configstore.FILES:
+        raise HTTPException(400, "Unknown config file")
+    if not configstore.is_writable():
+        raise HTTPException(409, "The config directory is read-only in this deployment")
+    with session(request) as s:
+        try:
+            change = configstore.apply(s, get_domain(), name, text, str(form.get("note", "")))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+    reload_domain(request.app)
+    log.info(json.dumps({"event": "config_change", "file": name, "change_id": change.id,
+                         "prompt_hash": change.prompt_hash_after, "routing_changes": change.routing_changes}))
+    tab = {"crm": "crm"}.get(name, name)
+    return Response(status_code=200, headers={"HX-Redirect": f"/config?tab={tab}&saved={change.id}"})
+
+
+@app.post("/config/revert/{change_id}", response_class=HTMLResponse)
+def config_revert_preview(request: Request, change_id: int):
+    from app.models import ConfigChange
+
+    with session(request) as s:
+        ch = s.get(ConfigChange, change_id)
+        if ch is None:
+            raise HTTPException(404, "Change not found")
+        pv = configstore.preview(s, get_domain(), ch.file, ch.before)
+    return render(request, "_config_preview.html", pv=pv, files=configstore.FILES,
+                  writable=configstore.is_writable(), revert_of=change_id)
 
 
 @app.exception_handler(404)

@@ -81,8 +81,8 @@ Short entries: decision, alternatives considered, why.
 ## D17. No prompt tuning against the eval set
 - **Why:** The complexity errors suggest a rubric fix ("board-level stakeholders"). Tuning against the same 50 records would make the numbers look better and mean less. The fix and its measurement belong with a held-out, independently labelled set. This is recorded in `failure_notes.md` and the README.
 
-## D18. `config/` is mounted read-only into the container
-- **Why:** This is an acceptance criterion: changing a team lead in `routing.yaml` and restarting must change routing with no rebuild. Verified on a fresh clone.
+## D18. `config/` is mounted into the container (writable)
+- **Why:** Changing a team lead in `routing.yaml` and restarting must change routing with no rebuild, and the Configuration page writes these files (D22). Add `:ro` to the mount to lock configuration in a deployment; the page then becomes read-only and says so.
 
 ## D19. htmx is vendored (`app/static/htmx.min.js`, 1.9.12)
 - **Why:** There is no build step either way. Vendoring removes a CDN dependency from "runs first time".
@@ -92,3 +92,20 @@ Short entries: decision, alternatives considered, why.
 
 ## D21. The routing destination is the primary recipient only; copies are separate
 - **Why:** Routing accuracy compares who owns the enquiry. Copies (practice head, service-line lead on an existing-client enquiry) are shown in the trace and in the notification, but don't count towards accuracy.
+
+## D22. A Configuration page exposes and edits the business logic
+- **Decision:** `/config` shows the routing rules in plain English and in order, which decisions the model makes and which code makes, the service line → lead table, the rubric, the exact system prompt, the user-message template and the output schema. Admins can edit team leads, line assignments, hard stops, review thresholds, every service-line definition and the rubric through forms. A raw YAML/JSON editor covers structural changes: adding a line, reordering rules, CRM data.
+- **Every edit goes Draft → Preview → Save.** The preview shows:
+  - validation errors, checking everything the code depends on, such as every line having a lead and `default` being the last rule;
+  - a diff of the file;
+  - a diff of the system prompt, if it changed;
+  - a **routing impact replay**: every stored enquiry is re-routed under the live and the draft config, using its stored classification, and the ones that would change are listed. This costs nothing, because routing is a pure function of stored data.
+- **On save:** the file is written atomically, the running app reloads it with no restart, and a `ConfigChange` row keeps the full before/after text and a note. The history tab can preview and save a revert.
+- **Alternatives:** Edit files and restart (the previous approach), or keep config in the database (which loses reviewable files under git).
+- **Why:** The rules and definitions are the product; the team leads and practice owners who own them should be able to see and change them safely. The impact replay answers "what happens if I turn this off?" before anyone does it.
+- **Not built:** permissions. There is no auth (non-goal), so anyone with the URL can change routing. In production this page sits behind SSO, admin role only, and changes would go through review: the history already has who/what/why, apart from "who".
+- **Structured edits preserve YAML comments** (ruamel.yaml round-trip), so a form edit doesn't wipe the files' explanations.
+
+## D23. Every run and eval result records the prompt hash and config hash
+- **Why:** Once prompts can change from the UI, `PROMPT_VERSION = "v1"` no longer identifies the prompt. Each pipeline run stores the sha256 of the exact system prompt and of the loaded config. The eval page and the prompt tab warn when evaluation results were produced with a different prompt from the live one.
+- **Backfill:** existing eval results and runs were backfilled. `config/` had not changed in git between the eval run and the backfill, and the files say so (`hashes_note`).

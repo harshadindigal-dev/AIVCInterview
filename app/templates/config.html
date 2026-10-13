@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% block title %}Configuration{% endblock %}
+{% set rt = domain.routing %}
+{% macro diffblock(text) -%}
+<pre class="diff">{% for line in text.splitlines() %}<span class="{{ 'add' if line.startswith('+') and not line.startswith('+++') else ('del' if line.startswith('-') and not line.startswith('---') else ('hunk' if line.startswith('@@') else '')) }}">{{ line }}</span>
+{% endfor %}</pre>
+{%- endmacro %}
+{% macro raw_editor(name) -%}
+<details class="raw-editor">
+  <summary>Edit raw {{ files[name][0] }}{{ ' (add or remove entries, reorder rules)' if name in ('taxonomy', 'routing') }}</summary>
+  <form hx-post="/config/preview" hx-target="#preview-{{ name }}" hx-indicator="#ind-{{ name }}-raw">
+    <input type="hidden" name="name" value="{{ name }}">
+    <textarea name="text" class="code-input" rows="24" spellcheck="false">{{ raw[name] }}</textarea>
+    <div class="form-actions"><button class="btn">Preview changes</button><span id="ind-{{ name }}-raw" class="htmx-indicator"><span class="spinner"></span> Checking…</span></div>
+  </form>
+</details>
+{%- endmacro %}
+{% block content %}
+<div class="page-head">
+  <h1>Configuration</h1>
+  <p class="muted">The business logic behind every decision: what the model is told, what code decides, and who receives what. Edits apply immediately (no restart), are validated first, show their impact on existing enquiries before you save, and are recorded in the change history.</p>
+</div>
+
+{% if not writable %}<div class="alert alert-warn">The config directory is read-only in this deployment. You can review everything and preview changes, but not save them.</div>{% endif %}
+{% if saved %}<div class="alert alert-ok">Change #{{ saved }} saved and live. New enquiries use it now; existing enquiries keep the routing they were given. <a href="/config?tab=history">See the change history</a>.</div>{% endif %}
+
+<nav class="tabs">
+  {% for key, label in tabs %}<a href="/config?tab={{ key }}" class="{{ 'active' if tab == key }}">{{ label }}</a>{% endfor %}
+</nav>
+
+{# ------------------------------------------------------------------ overview #}
+{% if tab == 'overview' %}
+<div class="detail-grid">
+  <section class="card">
+    <h2 class="card-title">The model decides</h2>
+    <ul class="plain">
+      <li><strong>Service line</strong>: one of {{ domain.service_line_ids | length }} lines, or out of scope / not an enquiry, plus any secondary lines</li>
+      <li><strong>Complexity</strong>: simple / moderate / complex, with a rationale that must cite the rubric</li>
+      <li><strong>Inferred urgency</strong>, compared with what the client stated</li>
+      <li><strong>Flags</strong>: {{ flags | join(', ') | replace('_', ' ') }}</li>
+      <li>Key entities, questions to ask the client, a one-line summary</li>
+    </ul>
+    <p class="small muted">Defined by <a href="/config?tab=taxonomy">Service lines</a> and <a href="/config?tab=rubric">Complexity & urgency</a>, which generate the <a href="/config?tab=prompt">system prompt</a>. The model runs 3 times; it is never asked for a confidence score.</p>
+  </section>
+  <section class="card">
+    <h2 class="card-title">Code decides</h2>
+    <ul class="plain">
+      <li><strong>Who receives it</strong>: deterministic rules below, from <code>routing.yaml</code></li>
+      <li><strong>Whether a human must look first</strong>: hard stops and review triggers</li>
+      <li><strong>Existing client, conflict, company size</strong>: CRM lookup, not the model</li>
+      <li><strong>Duplicates</strong>: same email and near-identical text within {{ rt.dedupe_window_days }} days</li>
+    </ul>
+    <p class="small muted">The model can only output taxonomy ids. It cannot name a person or a destination, so instructions like "route this to the CEO" have no path.</p>
+  </section>
+</div>
+
+<section class="card">
+  <h2 class="card-title">Routing rules, in the order they run</h2>
+  <p class="small muted">The first rule that applies decides. Every enquiry's detail page shows this same list with the result of each check.</p>
+  <ol class="rules">
+  {% for r in rt.rules %}
+    <li>
+      {% if r.id == 'hard_stop_review' %}
+        <strong>Hard stop → review queue.</strong> Before anything else, a human looks if:
+        <ul>
+          <li class="{{ '' if 'possible_injection' in rt.hard_stops.flags else 'off' }}">any of the 3 runs flags possible prompt injection {{ '' if 'possible_injection' in rt.hard_stops.flags else '(off)' }}</li>
+          <li class="{{ '' if rt.hard_stops.on_conflict_flag else 'off' }}">the CRM shows a conflict {{ '' if rt.hard_stops.on_conflict_flag else '(off)' }}</li>
+          <li class="{{ '' if rt.hard_stops.on_classification_failure else 'off' }}">classification fails after a retry {{ '' if rt.hard_stops.on_classification_failure else '(off)' }}</li>
+        </ul>
+      {% elif r.id == 'archive_not_an_enquiry' %}
+        <strong>Not an enquiry → archive.</strong> Spam, job applications and vendor pitches. No notification.
+      {% elif r.id == 'existing_client' %}
+        <strong>Existing client → relationship partner</strong>, with the service-line lead copied. Applies even if softer review triggers fired; the partner knows the client.
+      {% elif r.id == 'review_flags' %}
+        <strong>Review triggers → review queue</strong> if:
+        <ul>
+          <li>fewer than {{ rt.review.min_service_line_agreement }} of 3 runs agree on the service line</li>
+          <li>any flag other than {{ (rt.review.exempt_flags + rt.hard_stops.flags) | join(', ') | replace('_', ' ') }}</li>
+          <li class="{{ '' if rt.review.review_on_out_of_scope else 'off' }}">the enquiry is out of scope {{ '' if rt.review.review_on_out_of_scope else '(off)' }}</li>
+        </ul>
+      {% elif r.id == 'complex_high_urgency' %}
+        <strong>Complex and high urgency → service-line lead</strong>, with {{ rt.practice_head.name }} (practice head) copied. High means stated <em>or</em> inferred.
+      {% elif r.id == 'default' %}
+        <strong>Otherwise → the service-line lead.</strong>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ol>
+  <p class="small"><a href="/config?tab=routing">Change thresholds, hard stops and team leads →</a></p>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Service lines and who receives them</h2>
+  <div class="table-wrap"><table class="table compact-table">
+    <thead><tr><th>Service line</th><th>Team lead</th><th>Enquiries so far</th><th>What it covers</th></tr></thead>
+    <tbody>
+    {% for sl in domain.taxonomy.service_lines %}{% set lead = domain.lead_for(sl.id) %}
+      <tr><td><strong>{{ sl.name }}</strong><div class="muted small"><code>{{ sl.id }}</code></div></td>
+        <td>{{ lead.name if lead else '—' }}<div class="muted small">{{ lead.slack if lead }}</div></td>
+        <td>{{ line_counts.get(sl.id, 0) }}</td>
+        <td class="small">{{ sl.description | truncate(180) }}</td></tr>
+    {% endfor %}
+    {% for o in domain.taxonomy.non_service_outcomes %}
+      <tr class="muted"><td>{{ o.name }}<div class="small"><code>{{ o.id }}</code></div></td><td>{{ 'Archive' if o.id == 'not_an_enquiry' else 'Review queue' }}</td><td>{{ line_counts.get(o.id, 0) }}</td><td class="small">{{ o.description | truncate(180) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ------------------------------------------------------------------ routing #}
+{% elif tab == 'routing' %}
+<form class="config-form" hx-post="/config/preview" hx-target="#preview-routing" hx-indicator="#ind-routing">
+  <input type="hidden" name="name" value="routing"><input type="hidden" name="mode" value="form">
+  <section class="card">
+    <h2 class="card-title">Team leads</h2>
+    <div class="table-wrap"><table class="table compact-table edit-table">
+      <thead><tr><th>Lead</th><th>Name</th><th>Email</th><th>Slack</th><th>Receives service line</th></tr></thead>
+      <tbody>
+      {% for key, p in rt.team_leads.items() %}
+        <tr><td class="small muted"><code>{{ key }}</code></td>
+          <td><input name="lead__{{ key }}__name" value="{{ p.name }}" required></td>
+          <td><input name="lead__{{ key }}__email" value="{{ p.email }}" type="email" required></td>
+          <td><input name="lead__{{ key }}__slack" value="{{ p.slack }}" required></td>
+          <td>{% for line, lk in rt.routing_table.items() if lk == key %}{{ domain.line_name(line) }}{{ ', ' if not loop.last }}{% else %}<span class="muted">none</span>{% endfor %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <h3 class="sub">Who receives each service line</h3>
+    <div class="grid-3">
+      {% for line, lk in rt.routing_table.items() %}
+      <label class="form-row"><span>{{ domain.line_name(line) }}</span>
+        <select name="table__{{ line }}">{% for key, p in rt.team_leads.items() %}<option value="{{ key }}" {{ 'selected' if key == lk }}>{{ p.name }}</option>{% endfor %}</select></label>
+      {% endfor %}
+    </div>
+    <p class="small muted">Point a line at another lead during leave or a restructure; nothing else needs to change.</p>
+    <h3 class="sub">Practice head (copied on complex, high-urgency enquiries)</h3>
+    <div class="grid-3">
+      <input name="practice_head__name" value="{{ rt.practice_head.name }}" aria-label="Practice head name">
+      <input name="practice_head__email" value="{{ rt.practice_head.email }}" aria-label="Practice head email">
+      <input name="practice_head__slack" value="{{ rt.practice_head.slack }}" aria-label="Practice head Slack">
+    </div>
+  </section>
+
+  <div class="detail-grid">
+    <section class="card">
+      <h2 class="card-title">Hard stops (always go to a human)</h2>
+      <label class="check"><input type="checkbox" name="hard_stop_injection" {{ 'checked' if 'possible_injection' in rt.hard_stops.flags }}> Possible prompt injection flagged by any run</label>
+      <label class="check"><input type="checkbox" name="hard_stop_conflict" {{ 'checked' if rt.hard_stops.on_conflict_flag }}> CRM conflict flag</label>
+      <label class="check"><input type="checkbox" name="hard_stop_failure" {{ 'checked' if rt.hard_stops.on_classification_failure }}> Classification failed after retry</label>
+      <p class="small muted">These run before the existing-client rule. Turning one off lets that case route automatically; the preview shows which enquiries would.</p>
+    </section>
+    <section class="card">
+      <h2 class="card-title">Review triggers</h2>
+      <label class="form-row"><span>Runs that must agree on the service line</span>
+        <select name="min_service_line_agreement">{% for n in [1, 2, 3] %}<option value="{{ n }}" {{ 'selected' if rt.review.min_service_line_agreement == n }}>{{ n }} of 3{{ ' (agreement check off)' if n == 1 }}</option>{% endfor %}</select></label>
+      <p class="small">Flags that do <strong>not</strong> send an enquiry to review on their own:</p>
+      {% for f in flags if f != 'possible_injection' %}
+      <label class="check"><input type="checkbox" name="exempt__{{ f }}" {{ 'checked' if f in rt.review.exempt_flags }}> {{ f | replace('_', ' ') }}</label>
+      {% endfor %}
+      <label class="check"><input type="checkbox" name="review_on_out_of_scope" {{ 'checked' if rt.review.review_on_out_of_scope }}> Send out-of-scope enquiries to review (rather than the default rule)</label>
+      <label class="form-row"><span>Duplicate window (days)</span><input name="dedupe_window_days" type="number" min="0" max="90" value="{{ rt.dedupe_window_days }}"></label>
+    </section>
+  </div>
+  <div class="sticky-actions"><button class="btn btn-primary">Preview changes</button><span id="ind-routing" class="htmx-indicator"><span class="spinner"></span> Replaying routing for existing enquiries…</span></div>
+</form>
+<div id="preview-routing"></div>
+{{ raw_editor('routing') }}
+
+{# ------------------------------------------------------------------ taxonomy #}
+{% elif tab == 'taxonomy' %}
+<p class="muted">These definitions are written into the system prompt word for word. The "not this" notes are what separate neighbouring lines (for example internal audit vs external audit); most misclassifications are fixed here, not in code.</p>
+<form class="config-form" hx-post="/config/preview" hx-target="#preview-taxonomy" hx-indicator="#ind-taxonomy">
+  <input type="hidden" name="name" value="taxonomy"><input type="hidden" name="mode" value="form">
+  {% for sl in domain.taxonomy.service_lines + domain.taxonomy.non_service_outcomes %}
+  <details class="card entry" {{ 'open' if loop.first }}>
+    <summary><strong>{{ sl.name }}</strong> <code class="small">{{ sl.id }}</code>
+      <span class="muted small">{{ line_counts.get(sl.id, 0) }} enquiries{% if sl.id in domain.service_line_ids %} · {{ domain.lead_for(sl.id).name }}{% else %} · not a service line{% endif %}</span></summary>
+    <div class="grid-2 entry-body">
+      <label class="form-row"><span>Name</span><input name="{{ sl.id }}__name" value="{{ sl.name }}"></label>
+      <div></div>
+      <label class="form-row span-2"><span>Description</span><textarea name="{{ sl.id }}__description" rows="3">{{ sl.description | trim }}</textarea></label>
+      <label class="form-row"><span>Typical requests (one per line)</span><textarea name="{{ sl.id }}__typical_requests" rows="4">{{ sl.typical_requests | join('\n') }}</textarea></label>
+      <label class="form-row"><span>Not this (one per line)</span><textarea name="{{ sl.id }}__not_this" rows="4">{{ sl.not_this | join('\n') }}</textarea></label>
+    </div>
+  </details>
+  {% endfor %}
+  <div class="sticky-actions"><button class="btn btn-primary">Preview changes</button><span id="ind-taxonomy" class="htmx-indicator"><span class="spinner"></span> Checking…</span>
+    <span class="small muted">To add or remove a service line, use the raw editor below and add it to Routing → team leads.</span></div>
+</form>
+<div id="preview-taxonomy"></div>
+{{ raw_editor('taxonomy') }}
+
+{# ------------------------------------------------------------------ rubric #}
+{% elif tab == 'rubric' %}
+<p class="muted">How the model judges complexity and urgency. Written into the system prompt; the model's rationale must cite these criteria. The three levels are fixed (the output schema depends on them); their definitions are yours to change.</p>
+<form class="config-form" hx-post="/config/preview" hx-target="#preview-rubric" hx-indicator="#ind-rubric">
+  <input type="hidden" name="name" value="rubric"><input type="hidden" name="mode" value="form">
+  <section class="card">
+    <h2 class="card-title">Complexity criteria (one per line)</h2>
+    <div class="grid-3">
+      {% for c in domain.rubric.complexity %}
+      <label class="form-row"><span class="cx cx-{{ c.level }}">{{ c.level | capitalize }}</span><textarea name="cx__{{ c.level }}" rows="7">{{ c.criteria | join('\n') }}</textarea></label>
+      {% endfor %}
+    </div>
+    <label class="form-row"><span>Guidance notes (one per line)</span><textarea name="complexity_notes" rows="4">{{ domain.rubric.complexity_notes | join('\n') }}</textarea></label>
+    <p class="small muted">Known issue from the evaluation: every model over-calls complexity, mostly via "board-level stakeholders". Tightening that criterion here is the obvious fix; measure it with <code>make eval</code> before trusting it.</p>
+  </section>
+  <section class="card">
+    <h2 class="card-title">Urgency</h2>
+    {% for u in domain.rubric.urgency.levels %}
+    <label class="form-row"><span>{{ u.level | capitalize }}</span><textarea name="urg__{{ u.level }}" rows="2">{{ u.meaning }}</textarea></label>
+    {% endfor %}
+    <label class="form-row"><span>When to flag a mismatch with the stated urgency</span><textarea name="mismatch_rule" rows="3">{{ domain.rubric.urgency.mismatch_rule | trim }}</textarea></label>
+  </section>
+  <div class="sticky-actions"><button class="btn btn-primary">Preview changes</button><span id="ind-rubric" class="htmx-indicator"><span class="spinner"></span> Checking…</span></div>
+</form>
+<div id="preview-rubric"></div>
+{{ raw_editor('rubric') }}
+
+{# ------------------------------------------------------------------ prompt #}
+{% elif tab == 'prompt' %}
+{% if stale_evals %}<div class="alert alert-warn">The live prompt differs from the one used for evaluation results of: {{ stale_evals | join(', ') }}. Those numbers describe the old prompt. Re-run <code>make eval</code>.</div>{% endif %}
+<section class="card">
+  <dl class="kv compact">
+    <dt>Prompt version</dt><dd><code>{{ prompt_version }}</code> · prompt hash <code>{{ prompt_hash }}</code> · config hash <code>{{ config_hash }}</code></dd>
+    <dt>Generated from</dt><dd><a href="/config?tab=taxonomy">taxonomy.yaml</a> + <a href="/config?tab=rubric">rubric.yaml</a> (flag definitions and security rules are in <code>app/llm/prompts.py</code>)</dd>
+    <dt>Model</dt><dd><code>{{ model }}</code>, 3 runs (temperature 0 / 0.7 / 0.7 where the model accepts it)</dd>
+    <dt>Request</dt><dd><code>response_format: json_schema (strict)</code> · <code>provider.require_parameters: true</code> · <code>usage.include: true</code> · retry once, then review queue</dd>
+  </dl>
+  <p class="small muted">Every pipeline run stores the prompt hash it used, so you can tell which prompt produced any decision (detail page → Technical details).</p>
+</section>
+<section class="card"><h2 class="card-title">System prompt (exactly as sent)</h2><pre class="prompt">{{ system_prompt }}</pre></section>
+<div class="detail-grid">
+  <section class="card"><h2 class="card-title">User message template</h2><pre class="prompt">{{ example_user }}</pre>
+    <p class="small muted">Everything inside the tags is treated as untrusted; the text cannot close the tags early.</p></section>
+  <section class="card"><h2 class="card-title">Output schema (enums from the taxonomy)</h2><pre class="json">{{ schema | tojson_pretty }}</pre></section>
+</div>
+
+{# ------------------------------------------------------------------ crm #}
+{% elif tab == 'crm' %}
+<p class="muted">Mock CRM and company data used for enrichment. In production this is a CRM API behind the same interface; here you can add clients, conflicts and partners to see how routing responds.</p>
+<section class="card">
+  <div class="table-wrap"><table class="table compact-table">
+    <thead><tr><th>Company</th><th>Domains</th><th>Existing client</th><th>Relationship partner</th><th>Conflict</th><th>Headcount</th></tr></thead>
+    <tbody>{% for c in domain.crm.companies %}
+      <tr><td>{{ c.company_name }}</td><td class="small">{{ c.email_domains | join(', ') }}</td><td>{{ 'Yes' if c.existing_client else 'No' }}</td>
+        <td>{{ rt.relationship_partners[c.relationship_partner].name if c.relationship_partner in rt.relationship_partners else '—' }}</td>
+        <td>{% if c.conflict_flag %}<span class="pill flag flag-conflict">Conflict</span> <span class="small">{{ c.conflict_reason }}</span>{% else %}—{% endif %}</td>
+        <td>{{ '{:,}'.format(c.recorded_headcount) if c.recorded_headcount else '—' }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+<div id="preview-crm"></div>
+{{ raw_editor('crm') }}
+
+{# ------------------------------------------------------------------ history #}
+{% elif tab == 'history' %}
+{% for ch in history %}
+<section class="card change">
+  <div class="change-head">
+    <div><strong>#{{ ch.id }} · {{ files[ch.file][0] }}</strong> <span class="muted small">{{ ch.created_at | dt }}</span>
+      {% if ch.note %}<div>{{ ch.note }}</div>{% endif %}</div>
+    <div class="small muted right">
+      {% if ch.prompt_hash_before != ch.prompt_hash_after %}prompt <code>{{ ch.prompt_hash_before }}</code> → <code>{{ ch.prompt_hash_after }}</code><br>{% endif %}
+      {{ ch.routing_changes or 0 }} existing enquir{{ 'y' if ch.routing_changes == 1 else 'ies' }} would route differently
+    </div>
+  </div>
+  <details><summary>Diff</summary>{{ diffblock(diff(ch.before, ch.after)) }}</details>
+  <button class="btn" hx-post="/config/revert/{{ ch.id }}" hx-target="#revert-{{ ch.id }}">Preview revert</button>
+  <div id="revert-{{ ch.id }}"></div>
+</section>
+{% else %}
+<div class="empty"><p class="empty-title">No configuration changes yet.</p><p>Changes made on this page are recorded here with a full diff and can be reverted.</p></div>
+{% endfor %}
+{% endif %}
+
+<script>
+  document.body.addEventListener('htmx:responseError', function (evt) {
+    let msg = evt.detail.xhr.responseText;
+    try { msg = JSON.parse(msg).detail || msg; } catch (e) {}
+    alert('Not saved: ' + msg);
+  });
+</script>
+{% endblock %}

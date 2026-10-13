@@ -9,12 +9,15 @@
 <div class="empty"><p class="empty-title">No evaluation results yet.</p><p>Run <code>make eval</code> to produce <code>eval_results/*.json</code>.</p></div>
 {% else %}
 {% set m = selected.metrics %}
+{% if selected.prompt_hash and selected.prompt_hash != live_prompt_hash %}
+<div class="alert alert-warn">These results were produced with prompt <code>{{ selected.prompt_hash }}</code>; the live prompt is now <code>{{ live_prompt_hash }}</code> (changed on the <a href="/config?tab=history">Configuration page</a>). Re-run <code>make eval</code> before relying on these numbers.</div>
+{% endif %}
 <div class="model-picker">
   <span class="muted">Showing</span>
   {% for r in results %}
   <a href="/eval?model={{ r.model | urlencode }}" class="pill {{ 'pill-active' if r.model == selected.model }}">{{ r.model }}</a>
   {% endfor %}
-  <span class="muted small">prompt {{ selected.prompt_version }} · run {{ selected.run_at | dt }}</span>
+  <span class="muted small">prompt {{ selected.prompt_version }}{% if selected.prompt_hash %} (<code>{{ selected.prompt_hash }}</code>){% endif %} · run {{ selected.run_at | dt }}</span>
 </div>
 
 <div class="tiles">

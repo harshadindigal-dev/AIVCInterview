@@ -202,7 +202,7 @@
 <details class="card tech">
   <summary>Technical details</summary>
   <dl class="kv">
-    <dt>Prompt version</dt><dd><code>{{ run.prompt_version }}</code></dd>
+    <dt>Prompt version</dt><dd><code>{{ run.prompt_version }}</code>{% if run.prompt_hash %} · prompt <code>{{ run.prompt_hash }}</code> · config <code>{{ run.config_hash }}</code>{% endif %}</dd>
     <dt>Model requested</dt><dd><code>{{ run.model }}</code></dd>
     <dt>Model that answered</dt><dd><code>{{ run.model_used or '—' }}</code>{% if run.model_used and run.model_used != run.model %} <span class="warn-marker">fallback model answered</span>{% endif %}</dd>
     <dt>Provider</dt><dd>{{ run.provider or '—' }}</dd>

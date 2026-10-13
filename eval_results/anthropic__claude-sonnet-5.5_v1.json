@@ -3496,5 +3496,8 @@
    "cost_usd": null,
    "duplicate": true
   }
- ]
+ ],
+ "prompt_hash": "828b2a4ba669",
+ "config_hash": "b37272c50395",
+ "hashes_note": "backfilled 2026-10-13: config/ unchanged in git between this run and the backfill"
 }

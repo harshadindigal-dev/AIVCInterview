@@ -74,7 +74,10 @@ def process_enquiry(session: Session, enq: Enquiry, deps: PipelineDeps,
     domain = deps.domain
     emit = on_step or (lambda *a: None)
     latency: dict[str, int] = {}
-    audit = PipelineRun(enquiry_id=enq.id, prompt_version=PROMPT_VERSION, model=deps.model)
+    from app.configstore import config_hash, prompt_hash
+
+    audit = PipelineRun(enquiry_id=enq.id, prompt_version=PROMPT_VERSION, model=deps.model,
+                        prompt_hash=prompt_hash(domain), config_hash=config_hash(domain))
 
     # -- intake: dedupe ------------------------------------------------------
     t = time.perf_counter()

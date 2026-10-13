@@ -16,8 +16,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/var/app.db}
     volumes:
       - appdata:/app/var
-      # Mounted so edits to taxonomy/rubric/routing/CRM take effect on restart, no rebuild.
-      - ./config:/app/config:ro
+      # Mounted (writable) so edits made on the Configuration page, or in the files directly,
+      # persist in your checkout and survive rebuilds. Add :ro to lock configuration down.
+      - ./config:/app/config
 
 volumes:
   appdata:

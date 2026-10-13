@@ -52,6 +52,8 @@ class PipelineRun(SQLModel, table=True):
     enquiry_id: str = Field(index=True)
     created_at: datetime = Field(default_factory=utcnow, index=True)
     prompt_version: str | None = None
+    prompt_hash: str | None = None        # sha256 of the exact system prompt (changes when taxonomy/rubric are edited)
+    config_hash: str | None = None        # sha256 of all four config files as loaded for this run
     model: str | None = None              # requested
     model_used: str | None = None         # answered (differs if a fallback model was used)
     provider: str | None = None           # upstream provider OpenRouter chose
@@ -91,13 +93,42 @@ class Feedback(SQLModel, table=True):
     source: str = "user"                  # user | seed (demo feedback created at startup)
 
 
+class ConfigChange(SQLModel, table=True):
+    """Every configuration edit made through the UI, with the full before/after text."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    file: str                             # taxonomy | rubric | routing | crm
+    note: str | None = None
+    before: str
+    after: str
+    prompt_hash_before: str | None = None
+    prompt_hash_after: str | None = None
+    config_hash_after: str | None = None
+    routing_changes: int | None = None    # existing enquiries that would route differently (at save time)
+
+
 def make_engine(url: str):
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
     return create_engine(url, connect_args=connect_args)
 
 
+# Columns added after the first release. SQLite's create_all does not alter
+# existing tables, so add them in place (idempotent).
+_ADDED_COLUMNS = {"pipelinerun": {"prompt_hash": "VARCHAR", "config_hash": "VARCHAR"}}
+
+
 def init_db(engine) -> None:
+    from sqlalchemy import inspect, text
+
     SQLModel.metadata.create_all(engine)
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table, cols in _ADDED_COLUMNS.items():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for name, typ in cols.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {typ}"))
 
 
 def new_session(engine) -> Session:

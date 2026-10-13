@@ -26,6 +26,15 @@ SAMPLE_TEMPERATURE = 0.7
 MAX_ATTEMPTS = 2  # one call + one retry
 
 
+def agreement_text(votes: list[str | None], agreement: int) -> str:
+    """'3/3 runs agreed' or '2/3 agreed: tax vs deals'."""
+    n = len(votes)
+    if agreement == n:
+        return f"{n}/{n} runs agreed"
+    others = [v or "failed" for v in votes[1:] if v != votes[0]]
+    return f"{agreement}/{n} agreed: {votes[0] or 'failed'} vs {', '.join(dict.fromkeys(others))}"
+
+
 @dataclass
 class RunRecord:
     index: int
@@ -75,13 +84,7 @@ class ClassificationOutcome:
         return sum(known) if known else None
 
     def disagreement_text(self) -> str:
-        """'3/3 runs agreed' or '2/3 agreed: tax vs deals'."""
-        n = len(self.runs)
-        if self.agreement_service_line == n:
-            return f"{n}/{n} runs agreed"
-        others = [v or "failed" for v in self.service_line_votes[1:] if v != self.service_line_votes[0]]
-        primary = self.service_line_votes[0] or "failed"
-        return f"{self.agreement_service_line}/{n} agreed: {primary} vs {', '.join(dict.fromkeys(others))}"
+        return agreement_text(self.service_line_votes, self.agreement_service_line)
 
     def to_audit(self) -> dict[str, Any]:
         return {

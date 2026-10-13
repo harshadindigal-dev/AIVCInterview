@@ -294,9 +294,13 @@ def evaluate(*, client: LLMClient, domain: Domain, model: str, records: list[dic
     records = records or load_dataset()
     started = datetime.now(timezone.utc)
     preds = run_model(client=client, domain=domain, model=model, records=records, workers=workers, progress=progress)
+    from app.configstore import config_hash, prompt_hash
+
     return {
         "model": model,
         "prompt_version": PROMPT_VERSION,
+        "prompt_hash": prompt_hash(domain),
+        "config_hash": config_hash(domain),
         "run_at": started.isoformat(timespec="seconds"),
         "temperature_supported": client.supports_temperature(model),
         "metrics": score(preds, domain),

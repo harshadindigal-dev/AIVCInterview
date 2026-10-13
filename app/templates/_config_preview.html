@@ -1,0 +1,34 @@
+{% macro diffblock(text) -%}
+<pre class="diff">{% for line in text.splitlines() %}<span class="{{ 'add' if line.startswith('+') and not line.startswith('+++') else ('del' if line.startswith('-') and not line.startswith('---') else ('hunk' if line.startswith('@@') else '')) }}">{{ line }}</span>
+{% endfor %}</pre>
+{%- endmacro %}
+<section class="card preview">
+  <h2 class="card-title">Preview{{ ' of revert' if revert_of }}: {{ files[pv.name][0] }}</h2>
+  {% if pv.errors %}
+    <div class="alert alert-error"><strong>Not valid, so it can't be saved:</strong>
+      <ul>{% for e in pv.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+  {% elif pv.unchanged %}
+    <p class="muted">No changes compared with the live configuration.</p>
+  {% else %}
+    <div class="impact {{ 'impact-none' if not pv.impact }}">
+      {% if pv.impact %}
+      <p><strong>{{ pv.impact | length }} of {{ pv.impact_checked }} existing enquiries would route differently</strong> under this change (replayed from their stored classifications; no model calls). Existing enquiries are not rerouted when you save; this shows what the rule change means.</p>
+      <div class="table-wrap"><table class="table compact-table">
+        <thead><tr><th>Enquiry</th><th>Now</th><th>With this change</th><th>Deciding rule</th></tr></thead>
+        <tbody>{% for c in pv.impact %}<tr><td><a href="/enquiries/{{ c.id }}">{{ c.id }}</a> {{ c.company }}</td><td>{{ c.before }}</td><td><strong>{{ c.after }}</strong></td><td class="small">{{ rule_labels.get(c.rule_before, c.rule_before) }} → {{ rule_labels.get(c.rule_after, c.rule_after) }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% else %}
+      <p><strong>No existing enquiry would route differently</strong> ({{ pv.impact_checked }} replayed).</p>
+      {% endif %}
+    </div>
+    {% for w in pv.warnings %}<div class="alert alert-warn">{{ w }}</div>{% endfor %}
+    <details open><summary>Changes to {{ files[pv.name][0] }}</summary>{{ diffblock(pv.diff) }}</details>
+    {% if pv.prompt_changed %}<details><summary>Changes to the system prompt (<code>{{ pv.prompt_hash_before }}</code> → <code>{{ pv.prompt_hash_after }}</code>)</summary>{{ diffblock(pv.prompt_diff) }}</details>{% endif %}
+    <form class="save-form" hx-post="/config/apply" hx-disabled-elt="find button">
+      <input type="hidden" name="name" value="{{ pv.name }}">
+      <textarea name="text" hidden>{{ pv.text }}</textarea>
+      <input name="note" placeholder="Why are you making this change? (recorded in the history)" class="note-input">
+      <button class="btn btn-primary" {{ 'disabled' if not writable }}>{{ 'Save revert' if revert_of else 'Save and apply' }}</button>
+    </form>
+  {% endif %}
+</section>

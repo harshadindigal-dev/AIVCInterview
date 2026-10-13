@@ -39,7 +39,7 @@ Submit any sample twice to see the duplicate check. Then open the enquiry: the *
 | Command | What it does |
 |---|---|
 | `make up` / `make down` | Start / stop (keeps the database) |
-| `make test` | 69 tests in the image (one makes a live call, about $0.05) |
+| `make test` | 80 tests in the image (one makes a live call, about $0.05) |
 | `make eval` | Re-run the evaluation for all configured models (about $3) |
 | `make reset-db` | Delete the database volume; the next `make up` re-seeds |
 | `python -m scripts.triage E030` | Core logic only, no UI: classification, agreement, enrichment and routing trace for one enquiry (a dataset id or free text) |
@@ -77,9 +77,20 @@ What fails and why (full notes in `eval_results/failure_notes.md` and on the `/e
 - **The cheaper model is good enough for routing but not for complexity.** Haiku matches Sonnet on every routing and safety metric at about 1/16th of the cost. Its complexity and urgency calls are much weaker, and those are what the team lead reads.
 - **The complexity gold labels are single-labeller and debatable.** A few points of the complexity metric are labeller noise.
 
+## Configuration: the business logic, visible and editable
+
+The **Configuration** page (`/config`) shows:
+- the routing rules in the order they run, in plain English;
+- what the model decides vs what code decides;
+- who receives each service line;
+- the rubric;
+- the exact system prompt and output schema.
+
+Admins can change team leads, line assignments, hard stops, review thresholds, service-line definitions and the rubric there. Every change is validated and previewed before saving. The preview shows the diff, the system-prompt diff, and **which existing enquiries would route differently** (replayed from stored classifications, so no model calls). Saved changes apply immediately, are recorded with a note, and can be reverted from the history. Prompt changes mark the evaluation results as stale until `make eval` is re-run. There is no auth: in production this page would be admin-only behind SSO (DECISIONS D22).
+
 ## Assumptions
 
-All of these are editable in `config/`. Restart to apply; no rebuild is needed because `config/` is mounted read-only.
+All of these are editable on the Configuration page or directly in `config/` (`config/` is mounted into the container).
 - **[Taxonomy](config/taxonomy.yaml):** seven service lines, plus `out_of_scope` and `not_an_enquiry`, each with "not this" notes to separate neighbours.
 - **[Rubric](config/rubric.yaml):** complexity criteria from the brief, plus definitions of each urgency level and a rule for when to flag a mismatch.
 - **[Routing](config/routing.yaml):** fictional team leads, practice head, relationship partners, rule order and review thresholds. One change from the brief: injection, conflict and classification failure are hard stops that run before the existing-client rule (D5).
