@@ -1,0 +1,101 @@
+# Routing configuration. Edit and restart; no code changes needed.
+# All people are fictional. The firm domain uses the reserved .example TLD.
+
+version: 1
+
+team_leads:
+  audit:
+    name: Margaret Osei
+    email: margaret.osei@ashcombe.example
+    slack: "@mosei"
+  tax:
+    name: Daniel Whitfield
+    email: daniel.whitfield@ashcombe.example
+    slack: "@dwhitfield"
+  deals:
+    name: Sofia Marchetti
+    email: sofia.marchetti@ashcombe.example
+    slack: "@smarchetti"
+  risk_reg:
+    name: Aaron Lindqvist
+    email: aaron.lindqvist@ashcombe.example
+    slack: "@alindqvist"
+  tech:
+    name: Nadia Haddad
+    email: nadia.haddad@ashcombe.example
+    slack: "@nhaddad"
+  people:
+    name: Gareth Pryce
+    email: gareth.pryce@ashcombe.example
+    slack: "@gpryce"
+  strategy:
+    name: Helen Achterberg
+    email: helen.achterberg@ashcombe.example
+    slack: "@hachterberg"
+
+# Copied on complex + high-urgency enquiries.
+practice_head:
+  name: Catherine Doyle-Hart
+  email: catherine.doyle-hart@ashcombe.example
+  slack: "@cdoylehart"
+
+# Relationship partners referenced by crm_clients.json (by key).
+relationship_partners:
+  priya_raman:
+    name: Priya Raman
+    email: priya.raman@ashcombe.example
+    slack: "@praman"
+  tom_ellery:
+    name: Tom Ellery
+    email: tom.ellery@ashcombe.example
+    slack: "@tellery"
+
+# Who works the review queue. Notifications for review items go here.
+review_queue:
+  name: Intake review queue
+  email: intake-review@ashcombe.example
+  slack: "#intake-review"
+
+# service_line -> team_leads key. Kept explicit so a line can be pointed at
+# another lead (e.g. during leave) without renaming anything.
+routing_table:
+  audit: audit
+  tax: tax
+  deals: deals
+  risk_reg: risk_reg
+  tech: tech
+  people: people
+  strategy: strategy
+
+# Override rules, applied in this order. The first terminal rule decides the
+# destination; every rule evaluated is written to the routing trace.
+rules:
+  - id: archive_not_an_enquiry
+    description: not_an_enquiry -> archive, no notification
+  - id: existing_client
+    description: Existing client in CRM -> relationship partner, service-line lead copied
+  - id: review_flags
+    description: Any review trigger -> review queue
+  - id: complex_high_urgency
+    description: complex + high urgency -> service-line lead, practice head copied
+  - id: default
+    description: Otherwise -> service-line lead
+
+# Review-queue triggers (section 5.4).
+review:
+  # Number of the 3 runs whose service line must match the primary run.
+  min_service_line_agreement: 3
+  # Complexity disagreement is recorded and shown but does not trigger review
+  # unless this is raised above 1.
+  min_complexity_agreement: 1
+  # Flags that do NOT on their own send an enquiry to review.
+  exempt_flags:
+    - urgency_mismatch
+    - multi_service
+  review_on_conflict_flag: true
+  review_on_classification_failure: true
+  # out_of_scope as the primary line always goes to review (it is also a flag).
+  review_on_out_of_scope: true
+
+# Window for duplicate detection (same email + same normalised description).
+dedupe_window_days: 7

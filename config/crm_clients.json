@@ -1,0 +1,82 @@
+{
+  "_comment": "Fake CRM + company-data records. existing_client/relationship_partner/conflict_* feed CRMClient; recorded_headcount/recorded_industry feed CompanyData. relationship_partner is a key in routing.yaml relationship_partners.",
+  "companies": [
+    {
+      "company_name": "Halden Foods Ltd",
+      "email_domains": ["haldenfoods.co.uk"],
+      "existing_client": true,
+      "relationship_partner": "priya_raman",
+      "services_in_use": ["audit", "tax"],
+      "conflict_flag": false,
+      "conflict_reason": null,
+      "recorded_headcount": 640,
+      "recorded_industry": "Retail & consumer"
+    },
+    {
+      "company_name": "Northwind Logistics Ltd",
+      "email_domains": ["northwindlogistics.com"],
+      "existing_client": true,
+      "relationship_partner": "tom_ellery",
+      "services_in_use": ["tax"],
+      "conflict_flag": false,
+      "conflict_reason": null,
+      "recorded_headcount": 1450,
+      "recorded_industry": "Transport & logistics"
+    },
+    {
+      "company_name": "Brightwater Capital Partners",
+      "email_domains": ["brightwatercap.com"],
+      "existing_client": false,
+      "relationship_partner": null,
+      "services_in_use": [],
+      "conflict_flag": true,
+      "conflict_reason": "Firm is advising Ostrava Group on the sale of Kestrel Components; Brightwater is a known bidder.",
+      "recorded_headcount": 85,
+      "recorded_industry": "Financial services"
+    },
+    {
+      "company_name": "Castellan Pharma",
+      "email_domains": ["castellanpharma.com"],
+      "existing_client": false,
+      "relationship_partner": null,
+      "services_in_use": [],
+      "conflict_flag": true,
+      "conflict_reason": "Firm acts for Meridian Health in an active commercial dispute with Castellan Pharma.",
+      "recorded_headcount": 2300,
+      "recorded_industry": "Healthcare & life sciences"
+    },
+    {
+      "company_name": "Valemont Group plc",
+      "email_domains": ["valemontgroup.com"],
+      "existing_client": false,
+      "relationship_partner": null,
+      "services_in_use": [],
+      "conflict_flag": false,
+      "conflict_reason": null,
+      "recorded_headcount": 8200,
+      "recorded_industry": "Manufacturing"
+    },
+    {
+      "company_name": "Lumen Ledger Ltd",
+      "email_domains": ["lumenledger.io"],
+      "existing_client": false,
+      "relationship_partner": null,
+      "services_in_use": [],
+      "conflict_flag": false,
+      "conflict_reason": null,
+      "recorded_headcount": 12,
+      "recorded_industry": "Technology"
+    },
+    {
+      "company_name": "Pell & Garrow Retail",
+      "email_domains": ["pellgarrow.com"],
+      "existing_client": false,
+      "relationship_partner": null,
+      "services_in_use": [],
+      "conflict_flag": false,
+      "conflict_reason": null,
+      "recorded_headcount": 340,
+      "recorded_industry": "Retail & consumer"
+    }
+  ]
+}

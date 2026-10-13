@@ -1,0 +1,42 @@
+# Complexity and urgency definitions. Rendered into the system prompt verbatim.
+# The classifier's complexity_rationale must cite these criteria by name.
+
+version: 1
+
+complexity:
+  - level: simple
+    criteria:
+      - one well-defined deliverable
+      - one workstream
+      - low regulatory exposure
+      - roughly under 4 weeks of effort
+  - level: moderate
+    criteria:
+      - a defined scope with several deliverables, OR one workstream with real ambiguity
+      - roughly 1-3 months of effort
+  - level: complex
+    criteria:
+      - several workstreams or service lines
+      - significant regulatory or financial exposure
+      - cross-border work
+      - board-level stakeholders
+      - an unclear problem that needs discovery before scoping
+
+complexity_notes:
+  - Company size is a signal, not a rule. A 20-person company can have a complex tax problem, and a large company can have a simple one.
+  - Any single complex criterion that is material to the work is enough for complex.
+  - If the enquiry is too vague to judge, choose the most likely level, flag it as vague, and list what you would need to know in missing_information.
+
+urgency:
+  levels:
+    - level: low
+      meaning: No date mentioned, exploratory, or explicitly no rush. Start within a month or more is fine.
+    - level: normal
+      meaning: A date or business event in the next 1-3 months, or a general wish to start soon.
+    - level: high
+      meaning: A deadline within roughly 2 weeks, a regulator or tax authority deadline, an active incident, or a live transaction timetable.
+  mismatch_rule: >
+    Set the urgency_mismatch flag when your inferred urgency differs from the
+    stated urgency by two levels (low vs high), or by one level when the text
+    contains a specific external deadline (regulator, court, tax authority,
+    deal signing) that the stated urgency ignores.

@@ -1,0 +1,128 @@
+# Service-line taxonomy. The classifier's system prompt is generated from this
+# file (app/llm/prompts.py); nothing here is duplicated in Python.
+#
+# Each entry: id (stable, used in data + routing), name, description,
+# typical_requests (2), not_this (how it differs from its nearest neighbours).
+
+version: 1
+
+service_lines:
+  - id: audit
+    name: Audit & Assurance
+    description: >
+      Independent external opinions on financial information: statutory and
+      group audits, audits required by funders or regulators, and assurance
+      reports a client gives to third parties (e.g. ISAE 3402 / SOC 1 / SOC 2).
+      The defining feature is that the output is an opinion someone else relies on.
+    typical_requests:
+      - "We've crossed the audit thresholds and need a statutory audit for the year ending 31 March."
+      - "Our customers are asking for a SOC 1 Type II report on our payroll processing controls."
+    not_this:
+      - "Internal audit, SOX/controls readiness and control design are risk_reg, not audit: they help management, they are not an opinion for third parties."
+      - "Bookkeeping, accounts preparation and tax returns are not audit."
+
+  - id: tax
+    name: Tax Advisory
+    description: >
+      Corporate, indirect (VAT / GST / sales tax), employment and international
+      tax: compliance problems, structuring, transfer pricing, R&D credits,
+      share schemes and disputes with tax authorities.
+    typical_requests:
+      - "Can you help us prepare an R&D tax credit claim for our software development spend?"
+      - "We now have staff in four countries and need a transfer pricing policy."
+    not_this:
+      - "Tax structuring of an acquisition is a secondary line on a deals enquiry when the transaction itself is the main ask."
+      - "Share valuations needed purely for an HMRC share-scheme filing are tax; valuations for a transaction or shareholder dispute are deals."
+
+  - id: deals
+    name: Deals
+    description: >
+      Transactions: buy-side and sell-side financial due diligence, quality of
+      earnings, valuations for transactions and disputes, lead advisory,
+      and integration or separation planning tied to a specific deal.
+    typical_requests:
+      - "We're acquiring a competitor for about £15m and need financial due diligence in six weeks."
+      - "Our PE owner wants to exit next year and we need vendor due diligence."
+    not_this:
+      - "Post-merger people integration with no live transaction is people."
+      - "A general growth strategy that might one day involve an acquisition is strategy."
+
+  - id: risk_reg
+    name: Risk & Regulatory Compliance
+    description: >
+      Helping management meet regulatory obligations and manage risk: financial
+      services regulation (FCA, PRA, SEC, EU regimes such as DORA), AML,
+      authorisations, internal audit (outsourced or co-sourced), controls and
+      SOX readiness, operational resilience, regulator remediation (e.g. s166 reviews).
+    typical_requests:
+      - "The FCA has asked us to evidence our Consumer Duty implementation; we need a gap analysis."
+      - "We want to co-source our internal audit function for the next three years."
+    not_this:
+      - "An external audit opinion or a SOC report for customers is audit."
+      - "Cybersecurity assessments, penetration tests and IT security programmes are tech, unless the ask is a regulatory submission."
+
+  - id: tech
+    name: Technology & Digital Transformation
+    description: >
+      Selecting, designing and implementing technology: ERP, CRM and core system
+      replacements, cloud migration, data and analytics platforms, automation,
+      cybersecurity, and digital roadmaps where the question is which systems
+      and how to deliver them.
+    typical_requests:
+      - "We need help choosing between Salesforce and HubSpot and then implementing it."
+      - "We had a phishing incident and want a security assessment and pen test."
+    not_this:
+      - "If the question is whether to change the business model or enter a market, and technology is only a means, it is strategy."
+      - "Regulatory ICT obligations such as DORA are risk_reg, with tech as a secondary line when delivery work is also requested."
+
+  - id: people
+    name: People & Organisation
+    description: >
+      Organisation design, workforce and change: reward and pay benchmarking,
+      performance management, culture, HR operating models, restructuring and
+      redundancy programmes, pay gap reporting and workforce harmonisation.
+    typical_requests:
+      - "We need pay benchmarking for our five executive roles before the remuneration committee meets."
+      - "Our performance review process is broken; can you help us redesign it?"
+    not_this:
+      - "Employment tax and payroll tax compliance are tax."
+      - "Operating-model work driven by cost reduction across the business is strategy, with people as a secondary line."
+
+  - id: strategy
+    name: Strategy & Operations
+    description: >
+      Where to play and how to win, and making operations work: market entry,
+      growth and pricing strategy, business cases, cost transformation, supply
+      chain and operational performance improvement.
+    typical_requests:
+      - "We're considering expanding into Germany and need a market entry assessment."
+      - "The board has asked for a 15% reduction in operating costs over two years."
+    not_this:
+      - "Choosing or implementing a specific system is tech, even when it is called 'digital strategy'."
+      - "Valuing a specific target company is deals."
+
+# Outcomes that are not service lines. The classifier may return these as the
+# primary_service_line; they never route to a service-line lead.
+non_service_outcomes:
+  - id: out_of_scope
+    name: Out of scope
+    description: >
+      A genuine request for professional help that the firm does not provide:
+      legal representation and litigation, personal financial or mortgage
+      advice, immigration, recruitment, building or property surveys.
+    typical_requests:
+      - "We need a solicitor to represent us in a contract dispute with a supplier."
+      - "Can you recommend a mortgage adviser for my house purchase?"
+    not_this:
+      - "Litigation support work the firm does provide, such as forensic accounting or expert-witness valuation, is deals."
+
+  - id: not_an_enquiry
+    name: Not an enquiry
+    description: >
+      Messages that are not a request for services: spam, job applications,
+      vendors selling to the firm, marketing, and test submissions.
+    typical_requests:
+      - "I am a recent graduate and would like to apply for your analyst programme."
+      - "We help consulting firms generate 30+ qualified leads per month. Book a call."
+    not_this:
+      - "A real client enquiry that is badly written or very short is vague, not not_an_enquiry."
