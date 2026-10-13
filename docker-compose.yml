@@ -1,0 +1,21 @@
+services:
+  app:
+    build: .
+    image: intake-triage:latest
+    ports:
+      - "8000:8000"
+    environment:
+      # Values come from your shell or from .env (compose reads it automatically).
+      LLM_MODE: ${LLM_MODE:-live}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      TRIAGE_MODEL: ${TRIAGE_MODEL:-anthropic/claude-sonnet-5.5}
+      EVAL_MODELS: ${EVAL_MODELS:-anthropic/claude-haiku-5.5,google/gemini-3.8-flash}
+      TRIAGE_FALLBACK_MODELS: ${TRIAGE_FALLBACK_MODELS:-google/gemini-3.8-flash}
+      OPENROUTER_APP_URL: ${OPENROUTER_APP_URL:-http://localhost:8000}
+      OPENROUTER_APP_NAME: ${OPENROUTER_APP_NAME:-Intake Triage Demo}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/var/app.db}
+    volumes:
+      - appdata:/app/var
+
+volumes:
+  appdata:

@@ -1,0 +1,8 @@
+.env
+.venv
+.git
+.pytest_cache
+**/__pycache__
+data/app.db
+data/feedback_export.jsonl
+*.db
