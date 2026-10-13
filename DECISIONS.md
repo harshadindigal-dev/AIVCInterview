@@ -50,3 +50,13 @@ Short entries: decision, alternatives considered, why.
 
 ## D10. A `possible_injection` flag from any of the three runs triggers the hard stop
 - **Why:** Other flags come from the primary run only. Injection is the one where a single detection is enough, because a false positive costs a human glance and a false negative can misroute.
+
+## D11. "High urgency" for the complex+high rule means stated OR inferred
+- **Why:** Stated urgency is often wrong in both directions (E030, E031). Copying the practice head on a false positive is cheap. Missing a regulator deadline is not. The trace says which urgency source fired the rule.
+
+## D12. Routing trace records every rule evaluated, not only the one that fired
+- **Why:** "Why not tax lead?" is as common a question as "why tax lead?". The detail page shows each check in order with its result, and highlights the deciding rule. Exempt flags (urgency_mismatch, multi_service) appear as notes. When an existing-client enquiry would otherwise have gone to review, that is noted too.
+
+## D13. "Mark misclassified" also reroutes when the service line changes
+- **Alternatives:** Record the corrected label only.
+- **Why:** A reviewer who corrects the service line almost always wants the enquiry to go to that line's lead. Doing both in one action avoids a second click. Feedback is recorded with action `misclassified`, so it is distinguishable from a plain reassignment.
